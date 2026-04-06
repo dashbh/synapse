@@ -1,0 +1,1 @@
+export { KnowledgeQAApp } from './KnowledgeQAApp';

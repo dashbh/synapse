@@ -34,58 +34,8 @@ jobs:
       
       - name: Run ESLint
         working-directory: frontend
-        id: lint
-        continue-on-error: true
-        run: npm run lint -- . --format=json > lint-output.json 2>&1 && echo "LINT_STATUS=success" >> $GITHUB_ENV || echo "LINT_STATUS=failure" >> $GITHUB_ENV
+        run: npm run lint -- .
       
       - name: Build project
         working-directory: frontend
-        id: build
-        continue-on-error: true
         run: npm run build
-      
-      - name: Comment PR with results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            let comment = '## Frontend CI Results\n\n';
-            
-            // Lint results
-            comment += '### 🔍 Lint\n';
-            if (fs.existsSync('frontend/lint-output.json')) {
-              try {
-                const lintOutput = JSON.parse(fs.readFileSync('frontend/lint-output.json', 'utf8'));
-                const errorCount = lintOutput.reduce((sum, file) => sum + file.errorCount, 0);
-                const warningCount = lintOutput.reduce((sum, file) => sum + file.warningCount, 0);
-                if (errorCount === 0 && warningCount === 0) {
-                  comment += '✅ No linting issues found\n\n';
-                } else {
-                  comment += `⚠️ Found ${errorCount} errors and ${warningCount} warnings\n\n`;
-                  comment += '```json\n' + JSON.stringify(lintOutput, null, 2) + '\n```\n\n';
-                }
-              } catch (e) {
-                comment += '⚠️ Could not parse lint results\n\n';
-              }
-            }
-            
-            // Build results
-            comment += '### 🔨 Build\n';
-            if ('${{ job.status }}' === 'success') {
-              comment += '✅ Build successful\n';
-            } else {
-              comment += '❌ Build failed\n';
-            }
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
-      
-      - name: Set job status
-        if: failure()
-        run: exit 1

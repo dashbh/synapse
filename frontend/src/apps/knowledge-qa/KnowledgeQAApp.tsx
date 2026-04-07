@@ -6,6 +6,8 @@ import { useAgentStream } from '@/a2ui/transport/useAgentStream';
 import { StreamStatus } from '@/a2ui/transport/types';
 import { QueryInput } from './components/QueryInput';
 import { StreamStatusBar } from './components/StreamStatusBar';
+import { IngestionPanel } from './components/IngestionPanel';
+import { SearchFilters, type SearchFilterValues } from './components/SearchFilters';
 import { KNOWLEDGE_QA_CONFIG } from './config';
 
 function EmptyState() {
@@ -23,25 +25,34 @@ function EmptyState() {
   );
 }
 
+const EMPTY_FILTERS: SearchFilterValues = { category: '', dateFrom: '', dateTo: '' };
+
 export function KnowledgeQAApp() {
   const { status, start, stop } = useAgentStream(KNOWLEDGE_QA_CONFIG.endpoint);
   const [lastQuery, setLastQuery] = useState<string | null>(null);
+  const [filters, setFilters] = useState<SearchFilterValues>(EMPTY_FILTERS);
 
   const isStreaming = status === StreamStatus.STREAMING;
   const isError = status === StreamStatus.ERROR;
   const hasQueried = lastQuery !== null;
 
+  const activeFilters = Object.fromEntries(
+    Object.entries(filters).filter(([, v]) => v !== '')
+  );
+
   const handleSubmit = useCallback(
     (query: string) => {
       setLastQuery(query);
-      start(query);
+      start(query, activeFilters);
     },
-    [start]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [start, filters]
   );
 
   const handleRetry = useCallback(() => {
-    if (lastQuery) start(lastQuery);
-  }, [lastQuery, start]);
+    if (lastQuery) start(lastQuery, activeFilters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastQuery, start, filters]);
 
   return (
     <div className="flex flex-col gap-5 p-6 max-w-3xl mx-auto w-full">
@@ -52,6 +63,9 @@ export function KnowledgeQAApp() {
       </div>
 
       <QueryInput onSubmit={handleSubmit} disabled={isStreaming} />
+
+      {/* Search filters */}
+      <SearchFilters filters={filters} onChange={setFilters} disabled={isStreaming} />
 
       {/* Status row — fixed height prevents layout jump */}
       <div className="flex min-h-8 items-center justify-between gap-3">
@@ -84,6 +98,11 @@ export function KnowledgeQAApp() {
       ) : (
         <A2UISurface loading={isStreaming} />
       )}
+
+      {/* Ingestion panel — collapsible, below query results */}
+      <div className="mt-4 border-t border-gray-100 pt-4">
+        <IngestionPanel />
+      </div>
     </div>
   );
 }

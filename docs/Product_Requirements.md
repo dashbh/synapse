@@ -218,18 +218,26 @@ Synapse uses a unified component catalog for rendering:
 
 ## 8. Roadmap & Backlog
 
-### Phase 1 (Current: v1.0 Complete)
+### Phase 1 (v1.0 Complete + v1.5 Close-Out)
 - ✅ Platform Shell with AppRegistry
-- ✅ Knowledge-QA app (semantic search + mock ingestion UI)
+- ✅ Knowledge-QA app (semantic search + ingestion UI)
 - ✅ A2UI v0.9 protocol integration
 - ✅ SSE streaming (Message→React)
-- ✅ Design system + catalog components
+- ✅ Design system + catalog components (6 types: Text, Card, Button, Badge, SourceList, MetadataCard)
+- ✅ SSE explicit close on route change (`useSSE` unmount cleanup)
+- ✅ Volatile session reset on app nav (surfaces cleared in `useAgentStream` unmount)
+- ✅ Ingestion status UI — real-time Parsing → Chunking → Embedding steps
+- ✅ SSE-based `/ingest` mock endpoint with per-step progress
+- ✅ Rich citations side panel with source preview (`SourceListComponent`)
+- ✅ Citation metadata display (Document, Section, Date, Category via `MetadataCard`)
+- ✅ Semantic search filter panel (category + date range, wired to query URL params)
+- ✅ Admin token gate on `/ingest` endpoint (FE guard + mock 401 enforcement)
 
 ### Phase 2 (v2.0)
 - [ ] Reflexive-Brain app implementation
 - [ ] Implicit Ingestion: Automated "Watcher" services for cloud/local folder syncing
 - [ ] Session Hydration: Persistence layer to resume conversations across refreshes
-- [ ] Admin authentication (OAuth/SAML)
+- [ ] Real admin authentication (OAuth/SAML replacing mock token gate)
 - [ ] Backend implementation (Python FastAPI + LangChain + Claude)
 
 ### Phase 3 (v3.0+)
@@ -257,29 +265,11 @@ Synapse uses a unified component catalog for rendering:
 
 ---
 
-## 10. Deviation Flags: Requirements vs. Current Implementation
+## 10. Implementation Status
 
-⚠️ **DEVIATIONS IDENTIFIED:**
+All v1.0 and v1.5 requirements are complete. No open deviations.
 
-### 🔴 Critical Gaps (Must Fix Before v1 Close-Out)
-
-| # | Gap | Current State | Required | Action |
-|---|---|---|---|---|
-| **D1** | SSE explicit close on route change | ✅ Connection exists | Must explicitly `.close()` on app navigation | Verify `useAgentStream` cleanup in dependency tracking |
-| **D2** | Volatile Session reset | Partial (MessageProcessor clears) | Full UI state reset on app nav (confirmed behavior) | Verify all Zustand state clears on route change |
-| **D3** | Ingestion feedback UI (Progress steps) | ❌ Mock only | Real-time Parsing → Chunking → Embedding display | Create ingestion status component (Phase 2) |
-| **D4** | Ingestion endpoint (/ingest) | ❌ Does not exist | SSE-based ingestion with progress | Backend implementation (Phase 2) |
-
-### 🟡 Partial Implementation (v1.5 Deferred)
-
-| # | Feature | Current State | Required | Action |
-|---|---|---|---|---|
-| **D5** | Rich Citations (side panel) | ❌ Basic reference list | Full citation UI with source preview | Extend SourceListComponent (Phase 2) |
-| **D6** | Citation metadata display | ❌ Not implemented | Show (Document, Section, Date, Category) | Add MetadataCard component (Phase 2) |
-| **D7** | Semantic search filters | ❌ Not implemented | Filter by category, date range in UI | Add filter panel to Knowledge-QA (Phase 2) |
-| **D8** | Admin auth for ingestion | ❌ Not implemented | Auth guard on /ingest endpoint | Backend + Auth layer (Phase 2) |
-
-### 🟢 Implemented & Compliant (v1.0)
+### 🟢 Implemented & Compliant
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
@@ -287,27 +277,36 @@ Synapse uses a unified component catalog for rendering:
 | **C2** | A2UI v0.9 protocol | ✅ Done | MessageProcessor validates and renders |
 | **C3** | SSE streaming | ✅ Done | `useAgentStream` → `useSSE` POST streaming |
 | **C4** | React + Tailwind + shadcn/ui stack | ✅ Done | Design tokens mapped correctly |
-| **C5** | Knowledge-QA query interface | ✅ Done | QueryInput + StreamStatusBar complete |
-| **C6** | Catalog components (5 types) | ✅ Done | Text, Card, Button, Badge, SourceList |
+| **C5** | Knowledge-QA query interface | ✅ Done | QueryInput + SearchFilters + StreamStatusBar |
+| **C6** | Catalog components (6 types) | ✅ Done | Text, Card, Button, Badge, SourceList, MetadataCard |
 | **C7** | SOLID principles enforcement | ✅ Done | Layer boundaries strictly enforced |
 | **C8** | Graceful stream interruption | ✅ Done | Error boundary + retry UI |
 | **C9** | TypeScript strict mode | ✅ Done | No `any`, all A2UI types validated |
+| **C10** | SSE explicit close on route change | ✅ Done | `useSSE` abort cleanup on unmount |
+| **C11** | Volatile session reset | ✅ Done | Surfaces cleared in `useAgentStream` unmount |
+| **C12** | Ingestion status UI | ✅ Done | Real-time Parsing → Chunking → Embedding steps |
+| **C13** | SSE-based `/ingest` endpoint | ✅ Done | Mock with per-step progress streaming |
+| **C14** | Rich citations side panel | ✅ Done | Click-to-preview drawer in `SourceListComponent` |
+| **C15** | Citation metadata display | ✅ Done | `MetadataCard` — Document, Section, Date, Category |
+| **C16** | Semantic search filters | ✅ Done | Category + date range wired to query URL params |
+| **C17** | Admin auth gate for ingestion | ✅ Done | FE token input + mock 401 enforcement on `/ingest` |
 
 ---
 
 ## 11. Checklist: Implementation Verification
 
-After implementing deviations, verify:
-
-| Item | Verify |
+| Item | Status |
 |---|---|
 | **FE Architecture** | Platform Shell loads without app-specific imports ✓ |
 | **A2UI Protocol** | MessageProcessor receives 3-message sequence ✓ |
 | **SSE Transport** | Stream closes explicitly on route change ✓ |
 | **Session Cleanup** | App switch clears all surfaces + state ✓ |
-| **Components** | All 5 catalog components render from A2UI ✓ |
+| **Components** | All 6 catalog components render from A2UI ✓ |
 | **Design Tokens** | Styling driven from designTokens.ts only ✓ |
 | **Error Handling** | Graceful fallback on stream interruption ✓ |
+| **Citation Panel** | Source preview opens on card click ✓ |
+| **Search Filters** | Filters appended to agent query URL ✓ |
+| **Ingest Auth** | 401 returned without valid Bearer token ✓ |
 
 ---
 
@@ -326,4 +325,5 @@ After implementing deviations, verify:
 |---|---|---|
 | April 7, 2026 | 1.0 | Initial specification (Project Synapse finalized requirements) |
 | April 7, 2026 | 1.1 | SOLID refactor: Moved technical details to Architecture.md, Contracts.md, Governance.md; retained business spec only |
+| April 7, 2026 | 1.2 | Closed all D1–D8 deviations; updated roadmap and compliance table to reflect v1.5 close-out |
 

@@ -128,18 +128,24 @@ frontend/src/
 
 ## 📊 Current Status
 
-**v1 Features (Complete):**
+**v1.5 Features (All Complete):**
 - ✅ Platform Shell (multi-app routing)
 - ✅ A2UI Protocol (message processor + rendering)
-- ✅ SSE Transport (streaming)
-- ✅ Catalog Components (5 components)
+- ✅ SSE Transport (streaming) — explicit close on route change
+- ✅ Catalog Components (6: Text, Card, Button, Badge, SourceList, MetadataCard)
 - ✅ Knowledge-QA App (end-to-end working)
 - ✅ TypeScript strict mode
 - ✅ Error handling + Graceful degradation
 - ✅ Design tokens system
+- ✅ Volatile session reset on app navigation
+- ✅ Ingestion UI — real-time Parsing → Chunking → Embedding progress
+- ✅ SSE `/ingest` endpoint (mock, with per-step streaming)
+- ✅ Rich citations side panel (click-to-preview with full metadata)
+- ✅ Citation metadata (Document, Section, Date, Category)
+- ✅ Semantic search filters (category + date range)
+- ✅ Admin token gate for document ingestion
 
-**Implementation Gaps (Track in Governance):**
-See [docs/Product_Requirements.md](../docs/Product_Requirements.md) § 9 "Implementation Deviations" for what's not yet complete.
+No open implementation gaps. See [docs/Product_Requirements.md](../docs/Product_Requirements.md) § 10 for the full compliance table.
 
 ---
 

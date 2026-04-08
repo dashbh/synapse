@@ -25,6 +25,13 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
     optionsRef.current = options;
   });
 
+  // Abort the stream when the consuming component unmounts (e.g. route change)
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;

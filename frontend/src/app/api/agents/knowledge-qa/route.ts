@@ -15,6 +15,16 @@ function jsonLine(msg: object): Uint8Array {
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('query') ?? '(no query)';
+  const category = searchParams.get('category') ?? '';
+  const dateFrom = searchParams.get('dateFrom') ?? '';
+  const dateTo = searchParams.get('dateTo') ?? '';
+
+  const filterNote = [
+    category ? `category: ${category}` : '',
+    dateFrom || dateTo ? `date: ${dateFrom || '*'} → ${dateTo || '*'}` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -48,7 +58,7 @@ export async function POST(request: NextRequest) {
                 {
                   component: 'Text',
                   id: 'answer-body',
-                  text: `This is a mock answer for: "${query}". In production this comes from a LangChain RAG agent querying your knowledge base via pgvector.`,
+                  text: `This is a mock answer for: "${query}".${filterNote ? ` (Filters applied — ${filterNote}.)` : ''} In production this comes from a LangChain RAG agent querying your knowledge base via pgvector.`,
                   usageHint: 'body',
                 },
                 {
@@ -67,6 +77,10 @@ export async function POST(request: NextRequest) {
                       excerpt:
                         'RAG combines the power of large language models with external knowledge retrieval, allowing models to access up-to-date information beyond their training data.',
                       score: 0.94,
+                      document: 'ai-fundamentals.pdf',
+                      section: 'Chapter 3: Retrieval Methods',
+                      date: '2025-11-15',
+                      category: 'AI/ML',
                     },
                     {
                       id: 's2',
@@ -74,6 +88,10 @@ export async function POST(request: NextRequest) {
                       excerpt:
                         'Vector databases store high-dimensional embeddings that enable semantic similarity search over large document collections using approximate nearest-neighbour algorithms.',
                       score: 0.87,
+                      document: 'infrastructure-guide.pdf',
+                      section: 'Section 5: Storage Backends',
+                      date: '2025-09-03',
+                      category: 'Architecture',
                     },
                     {
                       id: 's3',
@@ -81,6 +99,10 @@ export async function POST(request: NextRequest) {
                       excerpt:
                         'LangChain provides composable retrieval chains that orchestrate document loading, embedding, vector store retrieval, and LLM generation in a single pipeline.',
                       score: 0.79,
+                      document: 'langchain-cookbook.pdf',
+                      section: 'Part II: Chains',
+                      date: '2026-01-22',
+                      category: 'AI/ML',
                     },
                   ],
                 },

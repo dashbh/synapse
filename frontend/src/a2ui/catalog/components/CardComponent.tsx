@@ -1,11 +1,9 @@
 import { type ReactElement } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { resolveStaticString } from '@/a2ui/types';
 import { type RenderChild } from '@/a2ui/catalog/catalogRegistry';
 
 interface CardComponentProps {
   title?: unknown;
-  /** IDs of child A2UI components to render inside this card. */
   childIds?: string[];
   renderChild?: RenderChild;
 }
@@ -17,17 +15,15 @@ export function CardComponent({ title, childIds = [], renderChild }: CardCompone
     : [];
 
   return (
-    <Card className="border border-gray-200 bg-white shadow-sm rounded-xl">
+    <div className="rounded-2xl border border-[var(--color-neutral-100)] bg-white shadow-[var(--shadow-card)] overflow-hidden">
       {titleText && (
-        <CardHeader className="pb-2 px-5 pt-4">
-          <CardTitle className="text-base font-semibold text-gray-800">
-            {titleText}
-          </CardTitle>
-        </CardHeader>
+        <div className="px-5 pt-4 pb-3 border-b border-[var(--color-neutral-50)]">
+          <h3 className="text-sm font-semibold text-[var(--color-neutral-800)]">{titleText}</h3>
+        </div>
       )}
-      <CardContent className={`px-5 pb-4 flex flex-col gap-3 ${titleText ? '' : 'pt-4'}`}>
+      <div className={`px-5 pb-4 flex flex-col gap-3 ${titleText ? 'pt-3' : 'pt-4'}`}>
         {children.length > 0 ? children : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

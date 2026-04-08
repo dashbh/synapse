@@ -4,6 +4,7 @@ import { CardComponent } from './components/CardComponent';
 import { ButtonComponent } from './components/ButtonComponent';
 import { BadgeComponent } from './components/BadgeComponent';
 import { SourceListComponent } from './components/SourceListComponent';
+import { MetadataCard } from './components/MetadataCard';
 
 /** Renders a child component by its A2UI component ID. */
 export type RenderChild = (id: string) => ReactElement | null;
@@ -45,5 +46,14 @@ export const catalogComponentMap: Record<string, CatalogRenderer> = {
 
   SourceList: (props) => (
     <SourceListComponent sources={props.sources} />
+  ),
+
+  MetadataCard: (props) => (
+    <MetadataCard
+      document={props.document}
+      section={props.section}
+      date={props.date}
+      category={props.category}
+    />
   ),
 };

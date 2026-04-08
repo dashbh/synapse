@@ -8,11 +8,11 @@ interface TextComponentProps {
 }
 
 const hintClasses: Record<UsageHint, string> = {
-  h1: 'text-4xl font-bold leading-tight text-gray-900',
-  h2: 'text-3xl font-bold leading-snug text-gray-900',
-  h3: 'text-2xl font-semibold leading-snug text-gray-900',
-  body: 'text-base font-normal leading-relaxed text-gray-700',
-  caption: 'text-sm font-normal leading-snug text-gray-500',
+  h1: 'text-2xl font-bold tracking-tight text-[var(--color-neutral-900)]',
+  h2: 'text-lg font-semibold text-[var(--color-neutral-900)]',
+  h3: 'text-xs font-semibold uppercase tracking-widest text-[var(--color-neutral-400)]',
+  body: 'text-sm font-normal leading-relaxed text-[var(--color-neutral-600)]',
+  caption: 'text-xs font-normal leading-relaxed text-[var(--color-neutral-500)]',
 };
 
 const validHints = new Set<UsageHint>(['h1', 'h2', 'h3', 'body', 'caption']);

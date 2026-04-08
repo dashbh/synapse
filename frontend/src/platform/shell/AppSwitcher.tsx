@@ -10,31 +10,38 @@ export function AppSwitcher() {
   const pathname = usePathname();
   const setActiveApp = usePlatformStore((s) => s.setActiveApp);
 
-  // Keep store in sync with the current route
   useEffect(() => {
     const match = appRegistry.find((app) => pathname.startsWith(app.route));
     setActiveApp(match?.id ?? null);
   }, [pathname, setActiveApp]);
 
+  const activeApp = appRegistry.find((app) => pathname.startsWith(app.route));
+
   return (
-    <nav className="flex items-center gap-1" aria-label="App navigation">
-      {appRegistry.map((app) => {
-        const isActive = pathname.startsWith(app.route);
-        return (
-          <Link
-            key={app.id}
-            href={app.route}
-            className={[
-              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-              isActive
-                ? 'bg-blue-50 text-blue-700'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-            ].join(' ')}
-          >
-            {app.name}
-          </Link>
-        );
-      })}
+    <nav className="flex items-center min-w-0" aria-label="App navigation">
+      {activeApp && (
+        <span className="mx-2 text-[var(--color-primary-600)] text-sm select-none">/</span>
+      )}
+      {activeApp && (
+        <span className="text-sm font-medium text-[var(--color-primary-200)] truncate">
+          {activeApp.name}
+        </span>
+      )}
+      {appRegistry.filter((app) => app !== activeApp).length > 0 && (
+        <div className="ml-4 flex items-center gap-1">
+          {appRegistry
+            .filter((app) => app !== activeApp)
+            .map((app) => (
+              <Link
+                key={app.id}
+                href={app.route}
+                className="px-2.5 py-1 rounded text-xs font-medium text-[var(--color-primary-400)] hover:text-[var(--color-primary-200)] hover:bg-[var(--color-primary-900)]/50 transition-colors"
+              >
+                {app.name}
+              </Link>
+            ))}
+        </div>
+      )}
     </nav>
   );
 }

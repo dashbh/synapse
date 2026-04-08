@@ -40,7 +40,7 @@ export function ComponentHost({ componentModel, surface }: ComponentHostProps) {
 
   if (!renderer) {
     return (
-      <div className="text-xs text-gray-400 italic">
+      <div className="text-xs text-[var(--color-neutral-400)] italic">
         Unknown component: {componentModel.type}
       </div>
     );

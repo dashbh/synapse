@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { type A2uiMessage } from '@a2ui/web_core/v0_9';
 import { useMessageProcessor } from '@/a2ui/processor/MessageProcessorProvider';
 import { useSSE } from './useSSE';
@@ -8,7 +8,7 @@ import { StreamStatus } from './types';
 
 interface UseAgentStreamReturn {
   status: StreamStatus;
-  start: (query: string) => void;
+  start: (query: string, filters?: Record<string, string>) => void;
   stop: () => void;
 }
 
@@ -38,15 +38,25 @@ export function useAgentStream(endpoint: string): UseAgentStreamReturn {
   });
 
   const start = useCallback(
-    (query: string) => {
+    (query: string, filters?: Record<string, string>) => {
       // Clear any existing surfaces so createSurface doesn't throw on re-query
       for (const id of [...processor.model.surfacesMap.keys()]) {
         processor.model.deleteSurface(id);
       }
-      startSSE(`${endpoint}?query=${encodeURIComponent(query)}`);
+      const params = new URLSearchParams({ query, ...filters });
+      startSSE(`${endpoint}?${params.toString()}`);
     },
     [endpoint, startSSE, processor]
   );
+
+  // Full volatile session reset: clear all surfaces when the app unmounts (route change)
+  useEffect(() => {
+    return () => {
+      for (const id of [...processor.model.surfacesMap.keys()]) {
+        processor.model.deleteSurface(id);
+      }
+    };
+  }, [processor]);
 
   return { status, start, stop };
 }

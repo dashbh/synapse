@@ -15,18 +15,18 @@ function SurfaceSkeleton() {
   return (
     <div className="flex flex-col gap-4 animate-pulse" aria-hidden="true">
       {/* Answer heading */}
-      <div className="h-7 w-24 rounded bg-gray-200" />
+      <div className="h-7 w-24 rounded bg-[var(--color-neutral-100)]" />
       {/* Answer body lines */}
       <div className="flex flex-col gap-2">
-        <div className="h-4 w-full rounded bg-gray-200" />
-        <div className="h-4 w-5/6 rounded bg-gray-200" />
-        <div className="h-4 w-4/6 rounded bg-gray-200" />
+        <div className="h-4 w-full rounded bg-[var(--color-neutral-100)]" />
+        <div className="h-4 w-5/6 rounded bg-[var(--color-neutral-100)]" />
+        <div className="h-4 w-4/6 rounded bg-[var(--color-neutral-100)]" />
       </div>
       {/* Sources heading */}
-      <div className="mt-1 h-5 w-20 rounded bg-gray-200" />
+      <div className="mt-1 h-5 w-20 rounded bg-[var(--color-neutral-100)]" />
       {/* Source cards */}
       {[0, 1, 2].map((i) => (
-        <div key={i} className="h-[4.5rem] rounded-lg bg-gray-200" />
+        <div key={i} className="h-[4.5rem] rounded-lg bg-[var(--color-neutral-100)]" />
       ))}
     </div>
   );

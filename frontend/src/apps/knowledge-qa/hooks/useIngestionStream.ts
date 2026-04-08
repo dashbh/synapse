@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 
 export type IngestionStep = 'upload' | 'parsing' | 'chunking' | 'embedding' | 'storing';
 export type StepStatus = 'idle' | 'in_progress' | 'done' | 'error';
@@ -11,6 +11,17 @@ export interface StepState {
 }
 
 export type IngestionSteps = Record<IngestionStep, StepState>;
+
+export const STEP_ORDER: IngestionStep[] = ['upload', 'parsing', 'chunking', 'embedding', 'storing'];
+
+/** Contribution to total progress (must sum to 100) */
+const STEP_WEIGHTS: Record<IngestionStep, number> = {
+  upload: 10,
+  parsing: 20,
+  chunking: 20,
+  embedding: 35,
+  storing: 15,
+};
 
 const INITIAL_STEPS: IngestionSteps = {
   upload: { status: 'idle', message: '' },
@@ -28,6 +39,8 @@ interface IngestionProgressMessage {
 
 interface UseIngestionStreamReturn {
   steps: IngestionSteps;
+  progress: number;             // 0–100
+  currentMessage: string;       // message from the active in_progress step
   isStreaming: boolean;
   isDone: boolean;
   isError: boolean;
@@ -45,10 +58,22 @@ export function useIngestionStream(endpoint: string): UseIngestionStreamReturn {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
+    return () => { abortRef.current?.abort(); };
   }, []);
+
+  const progress = useMemo(() => {
+    return STEP_ORDER.reduce((total, step) => {
+      const s = steps[step];
+      if (s.status === 'done') return total + STEP_WEIGHTS[step];
+      if (s.status === 'in_progress') return total + Math.round(STEP_WEIGHTS[step] * 0.5);
+      return total;
+    }, 0);
+  }, [steps]);
+
+  const currentMessage = useMemo(() => {
+    const active = STEP_ORDER.find((s) => steps[s].status === 'in_progress');
+    return active ? steps[active].message : '';
+  }, [steps]);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -135,5 +160,5 @@ export function useIngestionStream(endpoint: string): UseIngestionStreamReturn {
     [endpoint]
   );
 
-  return { steps, isStreaming, isDone, isError, isUnauthorized, start, reset };
+  return { steps, progress, currentMessage, isStreaming, isDone, isError, isUnauthorized, start, reset };
 }

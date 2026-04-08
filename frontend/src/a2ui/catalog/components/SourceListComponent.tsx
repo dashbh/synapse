@@ -22,43 +22,35 @@ interface SourceListComponentProps {
 }
 
 // ---------------------------------------------------------------------------
-// Side panel — fixed overlay rendered via portal so it escapes any overflow
+// Side panel
 // ---------------------------------------------------------------------------
 
-interface CitationSidePanelProps {
-  source: Source;
-  onClose: () => void;
-}
-
-function CitationSidePanel({ source, onClose }: CitationSidePanelProps) {
+function CitationSidePanel({ source, onClose }: { source: Source; onClose: () => void }) {
   const title = resolveStaticString(source.title) || 'Source';
   const excerpt = resolveStaticString(source.excerpt);
   const url = resolveStaticString(source.url);
-  const score =
-    typeof source.score === 'number' ? Math.round(source.score * 100) : undefined;
+  const score = typeof source.score === 'number' ? Math.round(source.score * 100) : undefined;
 
   const panel = (
     <>
-      {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/20 z-40"
+        className="fixed inset-0 bg-black/25 z-40 backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden="true"
       />
-
-      {/* Drawer */}
       <aside
         role="dialog"
         aria-modal="true"
         aria-label="Citation preview"
-        className="fixed top-0 right-0 h-full w-full max-w-sm bg-white shadow-xl z-50 flex flex-col"
+        className="fixed top-0 right-0 h-full w-full max-w-sm bg-white shadow-2xl z-50 flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <p className="text-sm font-semibold text-gray-900 leading-snug">{title}</p>
+        <div className="flex items-start justify-between gap-3 px-6 py-5 bg-[var(--color-header-bg)]">
+          <div className="flex flex-col gap-1 min-w-0">
+            <p className="text-sm font-semibold text-white leading-snug">{title}</p>
             {score !== undefined && (
-              <span className="text-xs font-medium text-blue-600">
+              <span className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-300)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success-400)]" />
                 {score}% match
               </span>
             )}
@@ -67,7 +59,7 @@ function CitationSidePanel({ source, onClose }: CitationSidePanelProps) {
             type="button"
             onClick={onClose}
             aria-label="Close panel"
-            className="shrink-0 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            className="shrink-0 mt-0.5 p-1.5 rounded-lg text-[var(--color-primary-400)] hover:text-white hover:bg-[var(--color-primary-800)] transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4l8 8M12 4l-8 8" />
@@ -76,8 +68,7 @@ function CitationSidePanel({ source, onClose }: CitationSidePanelProps) {
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
-          {/* Metadata */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
           <MetadataCard
             document={source.document}
             section={source.section}
@@ -85,23 +76,21 @@ function CitationSidePanel({ source, onClose }: CitationSidePanelProps) {
             category={source.category}
           />
 
-          {/* Full excerpt */}
           {excerpt && (
-            <div className="flex flex-col gap-1.5">
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Excerpt</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{excerpt}</p>
+            <div className="flex flex-col gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-neutral-400)]">Excerpt</p>
+              <p className="text-sm text-[var(--color-neutral-700)] leading-relaxed">{excerpt}</p>
             </div>
           )}
 
-          {/* Source URL */}
           {url && (
             <div className="flex flex-col gap-1.5">
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Source</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-neutral-400)]">Source</p>
               <a
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-blue-600 hover:underline break-all"
+                className="text-xs text-[var(--color-primary-600)] hover:text-[var(--color-primary-800)] hover:underline break-all"
               >
                 {url}
               </a>
@@ -116,7 +105,7 @@ function CitationSidePanel({ source, onClose }: CitationSidePanelProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Source card (list item)
+// Source card
 // ---------------------------------------------------------------------------
 
 function SourceCard({
@@ -130,38 +119,37 @@ function SourceCard({
 }) {
   const title = resolveStaticString(source.title) || `Source ${index + 1}`;
   const excerpt = resolveStaticString(source.excerpt);
-  const score =
-    typeof source.score === 'number' ? Math.round(source.score * 100) : undefined;
+  const score = typeof source.score === 'number' ? Math.round(source.score * 100) : undefined;
   const category = resolveStaticString(source.category);
 
   return (
-    <div className="flex flex-col gap-1.5 p-3 rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-start justify-between gap-2">
+    <div className="group flex flex-col gap-2 rounded-xl border border-[var(--color-neutral-100)] bg-white p-4 shadow-sm hover:shadow-md hover:border-[var(--color-primary-100)] transition-all duration-150">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5 min-w-0">
-          <p className="text-sm font-medium text-gray-900 leading-snug">{title}</p>
+          <p className="text-sm font-semibold text-[var(--color-neutral-900)] leading-snug">{title}</p>
           {category && (
-            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-primary-400)]">
               {category}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {score !== undefined && (
-            <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+            <span className="text-[11px] font-bold text-[var(--color-primary-600)] tabular-nums">
               {score}%
             </span>
           )}
           <button
             type="button"
             onClick={() => onPreview(source)}
-            className="text-xs text-gray-400 hover:text-blue-600 underline underline-offset-2 transition-colors"
+            className="rounded-lg border border-[var(--color-neutral-200)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-neutral-400)] hover:border-[var(--color-primary-300)] hover:text-[var(--color-primary-600)] hover:bg-[var(--color-primary-50)] transition-all opacity-0 group-hover:opacity-100"
           >
             Preview
           </button>
         </div>
       </div>
       {excerpt && (
-        <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{excerpt}</p>
+        <p className="text-xs text-[var(--color-neutral-500)] leading-relaxed line-clamp-2">{excerpt}</p>
       )}
     </div>
   );

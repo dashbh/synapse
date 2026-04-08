@@ -4,51 +4,39 @@ interface StreamStatusBarProps {
   status: StreamStatus;
 }
 
-interface StatusConfig {
-  bg: string;
-  border: string;
-  dot: string;
-  text: string;
-  label: string;
-}
-
-const STATUS_CONFIG: Record<Exclude<StreamStatus, StreamStatus.IDLE>, StatusConfig> = {
+const STATUS_CONFIG = {
   [StreamStatus.STREAMING]: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-100',
-    dot: 'animate-pulse bg-blue-500',
-    text: 'text-blue-700',
+    dot: 'animate-pulse bg-[var(--color-primary-500)]',
+    text: 'text-[var(--color-primary-700)]',
+    bg: 'bg-[var(--color-primary-50)] border-[var(--color-primary-100)]',
     label: 'Thinking…',
   },
   [StreamStatus.DONE]: {
-    bg: 'bg-emerald-50',
-    border: 'border-emerald-100',
-    dot: 'bg-emerald-500',
-    text: 'text-emerald-700',
+    dot: 'bg-[var(--color-success-500)]',
+    text: 'text-[var(--color-success-700)]',
+    bg: 'bg-[var(--color-success-50)] border-[var(--color-success-100)]',
     label: 'Done',
   },
   [StreamStatus.ERROR]: {
-    bg: 'bg-red-50',
-    border: 'border-red-100',
-    dot: 'bg-red-500',
-    text: 'text-red-700',
-    label: 'Something went wrong. Try again.',
+    dot: 'bg-[var(--color-error-500)]',
+    text: 'text-[var(--color-error-600)]',
+    bg: 'bg-[var(--color-error-50)] border-[var(--color-error-100)]',
+    label: 'Something went wrong',
   },
-};
+} as const;
 
 export function StreamStatusBar({ status }: StreamStatusBarProps) {
   if (status === StreamStatus.IDLE) return null;
-
-  const config = STATUS_CONFIG[status];
+  const { dot, text, bg, label } = STATUS_CONFIG[status];
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${config.bg} ${config.border} ${config.text}`}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${bg} ${text}`}
       role="status"
       aria-live="polite"
     >
-      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${config.dot}`} />
-      {config.label}
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+      {label}
     </div>
   );
 }

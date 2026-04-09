@@ -213,25 +213,15 @@ When ComponentHost encounters `{ "Image": {...} }`, it looks up in catalogRegist
 
 ### Step 4: Test in A2UI Message
 
-**Mock SSE response:**
+**Mock SSE response** — add to the `updateComponents.components` array in `frontend/src/app/api/agents/knowledge-qa/route.ts`:
 ```json
 {
-  "surfaceUpdate": {
-    "surfaceId": "test",
-    "components": [
-      {
-        "id": "logo",
-        "component": {
-          "Image": {
-            "src": { "literalString": "https://example.com/logo.png" },
-            "alt": { "literalString": "Company Logo" },
-            "width": 200,
-            "height": 100
-          }
-        }
-      }
-    ]
-  }
+  "id": "logo",
+  "component": "Image",
+  "src": "https://example.com/logo.png",
+  "alt": "Company Logo",
+  "width": 200,
+  "height": 100
 }
 ```
 
@@ -332,41 +322,24 @@ SSE stream completes but nothing renders.
 
 ### Checklist
 
-1. **Is MessageProcessor receiving messages?**
-   
-   Check DevTools → Console → Network tab:
-   - Open `/knowledge-qa` page
-   - Type query, press ⌘↵
-   - Check Network tab → knowledge-qa XHR
-   - Should show 3 lines of JSON response
+1. **Are both messages present?**
 
-2. **Are all 3 messages present?**
-   ```json
-   {"surfaceUpdate": {...}}     ← Message 1
-   {"dataModelUpdate": {...}}   ← Message 2
-   {"beginRendering": {...}}    ← Message 3
+   Network tab → knowledge-qa request → response body should show 2 JSON lines:
+   ```
+   {"version":"v0.9","createSurface":{"surfaceId":"qa-result","catalogId":"stub"}}
+   {"version":"v0.9","updateComponents":{"surfaceId":"qa-result","components":[...]}}
    ```
 
-3. **Do surfaces match across messages?**
-   ```json
-   M1: "surfaceId": "qa-result"
-   M2: "surfaceId": "qa-result"  ← Must match
-   M3: "surfaceId": "qa-result"  ← Must match
+2. **Does `surfaceId` match across both messages?**
+   ```
+   createSurface.surfaceId === updateComponents.surfaceId
    ```
 
-4. **Are component IDs valid?**
-   ```json
-   M1: "id": "answer-label"
-   M3: "root": "answer-label"  ← Must match
-   ```
+3. **Is `createSurface` missing a `components` field?** (It must not have one — components belong in `updateComponents`)
 
-5. **Do all `/paths` exist in data model?**
-   ```json
-   M1: "text": { "path": "/answer/text" }
-   M2: Must have key="answer" with nested key="text"
-   ```
+4. **Does `updateComponents` use `components[]`, not `updates[]`?**
 
-6. **Check browser console for errors**
+5. **Check browser console for errors**
    ```
    [A2UI] Failed to parse message: ...
    [A2UI] Stream error: ...
@@ -376,107 +349,87 @@ SSE stream completes but nothing renders.
 
 ```typescript
 // In browser console
-// 1. Check if processor exists
 const processor = window.__messageProcessor;  // (if exposed)
-console.log('Surfaces:', processor?.model?.surfaces);
 
-// 2. Monitor data binding
-processor?.model?.surfaces?.forEach(s => {
-  console.log('Surface:', s.surfaceId);
-  console.log('Components:', s.componentsModel.ids);
-  console.log('Data Model:', s.dataModel.contents);
-});
-
-// 3. Check rendered components
-document.querySelectorAll('[data-component-id]').forEach(el => {
-  console.log('Component:', el.getAttribute('data-component-id'), el.tagName);
+// Check surfaces
+[...processor?.model?.surfacesMap?.values()].forEach(s => {
+  console.log('Surface:', s.id);
+  console.log('Components:', [...s.componentsModel.ids]);
 });
 ```
 
 ### Common Mistakes
 
-❌ Component references non-existent data path:
+❌ Wrong component object format (old nested style, never implemented):
 ```json
-M1: { "Text": { "text": { "path": "/answer/body" } } }
-M2: Missing "answer" key → renders nothing
+{ "id": "x", "component": { "Text": { "text": "..." } } }  ← wrong
+{ "id": "x", "component": "Text", "text": "..." }          ← correct
 ```
 
-❌ Root component doesn't exist:
+❌ Sending a `render` message — not a recognised message type in `@a2ui/web_core/v0_9`:
 ```json
-M1: Components = ["answer-label", "sources"]
-M3: "root": "title"  ← "title" not in M1
+{ "version": "v0.9", "render": { "surfaceId": "..." } }  ← ignored/errors
 ```
 
-❌ Circular data binding (impossible but causes issues):
+❌ Component ID typo between `createSurface`-era expectations and `updateComponents`:
 ```json
-{ "path": "/answer/text" → points to → "/answer/value" → points to → "/answer/text" }
+updateComponents components: [{ "id": "answer-body" }]
+// elsewhere expecting:          "id": "answerBody"   ← mismatch
 ```
 
 ### Solution
 
-1. Verify all 3 messages received (network tab)
-2. Check surfaceId matches across messages
-3. Verify all `/path` references exist in data model
-4. Check component ID is correct and spelled consistently
-5. Clear browser cache (Cmd+Shift+Delete or hard refresh)
-6. Restart dev server (`npm run dev`)
+1. Confirm 2 messages received (network tab)
+2. Confirm `surfaceId` is identical in both
+3. Confirm `updateComponents.components[]` is an array with at least one component
+4. Hard-refresh browser (Cmd+Shift+R)
+5. Restart dev server (`npm run dev`)
 
 ---
 
-## Pattern: Connect to New Backend
+## Pattern: Activate the Real Backend
 
-### Problem
-Currently using mock backend at `/api/agents/knowledge-qa`. Want to connect to real FastAPI backend.
+The FastAPI backend is at `backend/`. The Next.js route handler auto-proxies to it when `BACKEND_URL` is set; otherwise it falls back to the mock.
 
-### Solution
+### Step 1: Start the backend
 
-**Step 1: Update endpoint in app config**
-
-**File:** `frontend/src/apps/knowledge-qa/config.ts`
-
-```typescript
-export const KNOWLEDGE_QA_CONFIG = {
-  id: 'knowledge-qa',
-  endpoint: process.env.NEXT_PUBLIC_AGENT_ENDPOINT || 'http://localhost:8000/query',
-  // ↑ Change from /api/agents/knowledge-qa to your FastAPI endpoint
-  surfaceId: 'qa-result',
-} as const;
+```bash
+cd backend
+source .venv/bin/activate   # or python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env        # fill in ANTHROPIC_API_KEY, OPENAI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
+python main.py              # starts on http://localhost:8000
 ```
 
-**Step 2: Set environment variable**
+### Step 2: Point Next.js at it
 
 **File:** `frontend/.env.local`
 
 ```bash
-NEXT_PUBLIC_AGENT_ENDPOINT=http://localhost:8000/query
-# Or for production:
-# NEXT_PUBLIC_AGENT_ENDPOINT=https://api.yourapp.com/query
+BACKEND_URL=http://localhost:8000
 ```
 
-**Step 3: Test with curl**
+### Step 3: Verify
 
 ```bash
-curl -X POST "http://localhost:8000/query" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "query=test" \
-  --no-buffer
+# Backend directly:
+curl -sN -X POST "http://localhost:8000/api/agents/knowledge-qa?query=What+is+RAG"
 
-# Expected output (3 lines):
-# {"surfaceUpdate": {...}}
-# {"dataModelUpdate": {...}}
-# {"beginRendering": {...}}
+# Through Next.js proxy:
+curl -sN -X POST "http://localhost:3000/api/agents/knowledge-qa?query=What+is+RAG"
+
+# Expected output (2 lines):
+# {"version":"v0.9","createSurface":{"surfaceId":"qa-result","catalogId":"stub"}}
+# {"version":"v0.9","updateComponents":{"surfaceId":"qa-result","components":[...]}}
 ```
 
-**Step 4: Verify in FE**
+### How the proxy works
 
-1. Restart dev server: `npm run dev`
-2. Visit http://localhost:3000/knowledge-qa
-3. Type query, press ⌘↵
-4. Should see backend response (not mock)
+`frontend/src/app/api/agents/knowledge-qa/route.ts` checks `process.env.BACKEND_URL`:
+- **Set** → forwards the full query string to FastAPI and streams the response
+- **Not set** → returns mock data (useful for FE-only development)
 
-✅ **No other code changes needed!**
-
-The app dynamically uses whatever endpoint is in config. AppRegistry + transport layer are already abstracted.
+No changes to app config or component code needed.
 
 ---
 
@@ -493,7 +446,7 @@ useAgentStream.start(query)
     ↓
 fetch(POST, endpoint, query)  ← Opens SSE stream
     ↓
-SSE message: surfaceUpdate
+SSE message: createSurface / updateComponents
     ↓
 useAgentStream → processor.processMessages()
     ↓

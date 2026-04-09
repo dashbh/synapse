@@ -1,0 +1,45 @@
+# Build outputs and dependencies
+node_modules/
+frontend/dist/
+frontend/build/
+.next/
+out/
+*.tsbuildinfo
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment and config
+.env
+.env.local
+.env.*.local
+
+# IDE and OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.git/
+.gitignore
+
+# Cache
+.eslintcache
+.next/cache/
+
+# Dependencies cache
+.yarn/
+.pnp
+.pnp.js
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temp files
+tmp/
+temp/
+*.tmp

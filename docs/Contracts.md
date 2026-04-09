@@ -1,9 +1,9 @@
 # Frontend ↔ Backend Contract Specification
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Protocol:** A2UI v0.9 over SSE  
-**Last Updated:** April 7, 2026  
-**Status:** Locked (FE ready, waiting for BE implementation)
+**Last Updated:** April 9, 2026  
+**Status:** Active (FE + BE implemented)
 
 ---
 
@@ -12,116 +12,104 @@
 **Frontend sends:**
 
 ```
-POST /api/agents/knowledge-qa
-Content-Type: application/x-www-form-urlencoded
-
-query=<user-question-string>
+POST /api/agents/knowledge-qa?query=<user-question-string>[&category=<category>][&dateFrom=<YYYY-MM-DD>][&dateTo=<YYYY-MM-DD>]
 ```
+
+Parameters are in the **URL query string** (no request body). The `useAgentStream` hook builds the URL with `URLSearchParams` and calls `fetch()` as a POST with no body.
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:3000/api/agents/knowledge-qa" \
-  -d "query=What%20is%20machine%20learning?"
+curl -sN -X POST \
+  "http://localhost:8000/api/agents/knowledge-qa?query=What+is+machine+learning&category=AI%2FML&dateFrom=2025-01-01&dateTo=2026-12-31"
 ```
+
+**Query Parameters:**
+- `query` (required): User question string
+- `category` (optional): Filter by document category (e.g., "AI/ML", "Architecture", "Security")
+- `dateFrom` (optional): Filter documents from this date (YYYY-MM-DD). Inclusive.
+- `dateTo` (optional): Filter documents up to this date (YYYY-MM-DD). Inclusive.
+
+Filters are applied with AND logic: results must match query AND all specified filters.
 
 **Response Headers (what FE expects):**
 ```
 HTTP/1.1 200 OK
-Content-Type: text/event-stream
-Transfer-Encoding: chunked
+Content-Type: text/plain; charset=utf-8
+Cache-Control: no-cache, no-store
+X-Accel-Buffering: no
 ```
 
 ---
 
 ## 2. Response Specification (Exact Message Sequence)
 
-Backend MUST send exactly 3 newline-delimited JSON messages in this order:
+Backend MUST send exactly **2** newline-delimited JSON messages in this order:
 
-### Message 1: surfaceUpdate (Component Definitions)
+**Protocol:** A2UI v0.9  
+**Library:** `@a2ui/web_core/v0_9` — supported message types: `createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`. There is no `render` message type in the library.
+
+### Message 1: createSurface
+
+Registers a new surface. No component definitions — those come in Message 2.
 
 ```json
 {
-  "surfaceUpdate": {
+  "version": "v0.9",
+  "createSurface": {
+    "surfaceId": "qa-result",
+    "catalogId": "stub"
+  }
+}
+```
+
+**Constraints:**
+- Must have `version: "v0.9"`
+- Must have `surfaceId` (unique per stream)
+- Must have `catalogId` (`"stub"` for this version)
+- No `components` field — `createSurface` only registers the surface
+
+### Message 2: updateComponents (Full Component Definitions + Data)
+
+Sent ~350ms after Message 1. Defines all components with their final content in one shot.
+
+```json
+{
+  "version": "v0.9",
+  "updateComponents": {
     "surfaceId": "qa-result",
     "components": [
       {
         "id": "answer-label",
-        "component": {
-          "Text": {
-            "text": { "literalString": "Answer" },
-            "usageHint": "h2"
-          }
-        }
+        "component": "Text",
+        "text": "Answer",
+        "usageHint": "h2"
       },
       {
         "id": "answer-body",
-        "component": {
-          "Text": {
-            "text": { "path": "/answer/text" }
-          }
-        }
+        "component": "Text",
+        "text": "Machine learning is a subset of AI where systems learn from data without explicit programming.",
+        "usageHint": "body"
       },
       {
         "id": "sources-label",
-        "component": {
-          "Text": {
-            "text": { "literalString": "Sources" },
-            "usageHint": "h3"
-          }
-        }
+        "component": "Text",
+        "text": "Sources",
+        "usageHint": "h3"
       },
       {
         "id": "sources-list",
-        "component": {
-          "SourceList": {
-            "items": { "path": "/sources" }
-          }
-        }
-      }
-    ]
-  }
-}
-```
-
-**Constraints:**
-- Must have `surfaceId` (unique identifier)
-- `components` array with at least one component
-- Each component has `id` (unique within surface) and `component` (type + props)
-- Props use data binding syntax: `{ "path": "/key" }` for dynamic, `{ "literalString": "..." }` for static
-
-### Message 2: dataModelUpdate (Data Binding)
-
-Sent ~300ms after Message 1.
-
-```json
-{
-  "dataModelUpdate": {
-    "surfaceId": "qa-result",
-    "contents": [
-      {
-        "key": "answer",
-        "valueMap": [
-          { "key": "text", "valueString": "Machine learning is a subset of AI where systems learn from data without explicit programming. It powers recommendations, image recognition, and natural language processing." }
-        ]
-      },
-      {
-        "key": "sources",
-        "valueList": [
+        "component": "SourceList",
+        "sources": [
           {
-            "valueMap": [
-              { "key": "title", "valueString": "Introduction to Machine Learning" },
-              { "key": "excerpt", "valueString": "ML is a branch of artificial intelligence focused on enabling computers to learn from experience..." },
-              { "key": "score", "valueFloat": 0.92 },
-              { "key": "url", "valueString": "https://docs.example.com/ml-intro" }
-            ]
-          },
-          {
-            "valueMap": [
-              { "key": "title", "valueString": "Deep Learning Fundamentals" },
-              { "key": "excerpt", "valueString": "Deep learning uses neural networks with multiple layers to process complex data..." },
-              { "key": "score", "valueFloat": 0.87 },
-              { "key": "url", "valueString": "https://docs.example.com/deep-learning" }
-            ]
+            "id": "uuid-here",
+            "title": "Introduction to Machine Learning",
+            "excerpt": "ML is a branch of artificial intelligence focused on enabling computers to learn from experience...",
+            "score": 0.92,
+            "document": "ai-fundamentals.pdf",
+            "section": "Chapter 3: Retrieval Methods",
+            "date": "2025-11-15",
+            "category": "AI/ML",
+            "url": "https://docs.example.com/ml-intro"
           }
         ]
       }
@@ -131,28 +119,11 @@ Sent ~300ms after Message 1.
 ```
 
 **Constraints:**
+- `version` must be `"v0.9"`
 - `surfaceId` must match Message 1
-- `contents` array with key-value pairs
-- Values can be: `valueString`, `valueFloat`, `valueList`, `valueMap`
-- List items match the structure components expect (SourceList expects map with title/excerpt/score/url)
-
-### Message 3: beginRendering (Render Signal)
-
-Sent ~300ms after Message 2.
-
-```json
-{
-  "beginRendering": {
-    "surfaceId": "qa-result",
-    "root": "answer-label"
-  }
-}
-```
-
-**Constraints:**
-- `surfaceId` must match Messages 1 & 2
-- `root` is component ID to start rendering from
-- After this message, close the SSE stream
+- `components` is a **full replacement array** — send all components with their final values
+- Each component has `id` (unique within surface), `component` (type string), and type-specific props as flat key-value pairs
+- Stream closes after this message
 
 ---
 
@@ -160,43 +131,44 @@ Sent ~300ms after Message 2.
 
 | Phase | Timing | What Happens |
 |---|---|---|
-| **Connection opens** | T+0ms | FE opens SSE stream to endpoint |
-| **Message 1 sent** | T+0-100ms | Backend sends surfaceUpdate |
-| **Message 2 sent** | T+300ms ±100ms | Backend sends dataModelUpdate (simulates thinking) |
-| **Message 3 sent** | T+600ms ±100ms | Backend sends beginRendering |
-| **Stream closes** | T+700ms | connection closes, rendering starts |
-| **Total duration** | 1-30s | Configurable based on RAG query time |
+| **Connection opens** | T+0ms | FE opens stream to endpoint |
+| **Message 1 sent** | T+0ms | Backend sends `createSurface` |
+| **Message 2 sent** | T+350ms | Backend sends `updateComponents` (after RAG completes) |
+| **Stream closes** | T+350ms+ | Connection closes; FE renders from processor state |
+| **Total duration** | 1–30s | Dominated by embedding + vector search + LLM latency |
 
-**Frontend timeout:** If `beginRendering` not received by T+30s, show error: "Query took too long"
+**Frontend timeout:** If stream does not complete within T+30s, FE shows error: "Query took too long"
 
 ---
 
-## 4. Data Binding & Value Types
+## 4. Component Props & Supported Values
 
-### Static Values
-For fixed text, use `literalString`:
+### Prop Assignment in updateComponents
+
+Props are set as flat key-value pairs on the component object inside the `components` array:
+
 ```json
-{ "text": { "literalString": "Label" } }
+{
+  "id": "my-button",
+  "component": "Button",
+  "label": "Click me",
+  "variant": "primary"
+}
 ```
 
-### Dynamic Values
-To bind to data model, use `path`:
-```json
-{ "text": { "path": "/answer/text" } }
-```
+### Prop Types
 
-Path syntax:
-- `/answer/text` — access `contents[0].key="answer" → valueMap[0].key="text" → valueString`
-- `/sources` — access array at that key
-- `/sources[0]/title` — future support (not in v1)
-
-### Supported Value Types
-| Type | JSON Field | Example |
+| Type | Example | Usage |
 |---|---|---|
-| String | `valueString` | `"valueString": "Hello"` |
-| Float | `valueFloat` | `"valueFloat": 0.95` |
-| List | `valueList` | `"valueList": [...]` |
-| Map | `valueMap` | `"valueMap": [{"key": "k", "valueString": "v"}]` |
+| String | `"label": "Submit"` | Text labels, content |
+| Number | `"score": 0.95` | Similarity scores, indices |
+| Boolean | `"disabled": false` | Component states |
+| Array | `"sources": [...]` | Lists of objects (SourceList, Card children) |
+| Object | `{ title: "...", url: "..." }` | Structured data (source items, metadata) |
+
+### Full Replacement Semantics
+
+`updateComponents` sends the **complete** component array on every call — there is no incremental patch mechanism. Each component object contains all its final prop values.
 
 ---
 
@@ -204,13 +176,13 @@ Path syntax:
 
 Frontend can render these A2UI component types:
 
-| Type | Props | Example |
-|---|---|---|
-| **Text** | `text`, `usageHint` | `{ "Text": { "text": {...}, "usageHint": "h1" } }` |
-| **Card** | `childs` (component IDs) | `{ "Card": { "childs": ["id1", "id2"] } }` |
-| **Button** | `text`, `variant` | `{ "Button": { "text": {...}, "variant": "primary" } }` |
-| **Badge** | `text`, `variant` | `{ "Badge": { "text": {...}, "variant": "success" } }` |
-| **SourceList** | `items` | `{ "SourceList": { "items": { "path": "/sources" } } }` |
+| Type | Required Props | Optional Props | Example |
+|---|---|---|---|
+| **Text** | `text` | `usageHint` | `{ "component": "Text", "text": "Hello", "usageHint": "h1" }` |
+| **Card** | `childIds` | `title` | `{ "component": "Card", "title": "Details", "childIds": ["id1", "id2"] }` |
+| **Button** | `label` | `variant` | `{ "component": "Button", "label": "Submit", "variant": "primary" }` |
+| **Badge** | `label` | `variant` | `{ "component": "Badge", "label": "Status", "variant": "success" }` |
+| **SourceList** | `sources` | — | `{ "component": "SourceList", "sources": [{ "id": "...", "title": "...", "excerpt": "...", "score": 0.9, "document": "...", "section": "...", "date": "YYYY-MM-DD", "category": "...", "url": "..." }] }` |
 
 **Text `usageHint` values:**
 - `h1` → large heading
@@ -219,12 +191,25 @@ Frontend can render these A2UI component types:
 - `body` → normal paragraph text
 - `caption` → small grey text
 
-**Button/Badge `variant` values:**
-- `primary` (default blue)
-- `secondary` (outline)
-- `success` (green)
-- `warning` (orange)
-- `error` (red)
+**Button `variant` values:** `secondary` (outlined grey) or omit for primary blue gradient
+
+**Badge `variant` values:** `default` (blue-tinted), `secondary` (violet-tinted), `destructive` (red-tinted), `outline` (transparent ring)
+
+### SourceList Source Object Fields
+
+All fields are optional in the component but should be populated by the backend when available:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Chunk UUID from the database |
+| `title` | string | Document filename or display title |
+| `excerpt` | string | Content snippet (~400 chars) |
+| `score` | number | Cosine similarity (0–1) |
+| `document` | string | Source filename (e.g. `api-guide.pdf`) |
+| `section` | string | Document section or heading |
+| `date` | string | Upload date `YYYY-MM-DD` |
+| `category` | string | User-defined category |
+| `url` | string | Link to the source document (optional) |
 
 ---
 
@@ -232,24 +217,25 @@ Frontend can render these A2UI component types:
 
 ### Backend Errors
 
-If backend encounters error **before sending all 3 messages:**
+If backend errors **before Message 2 is sent:**
 - Close stream with HTTP error code (500, 400, etc.)
-- Or send partial messages that FE can render with loading state
 - FE will show: "Something went wrong. Retry?"
 
 ### Backend Errors (Inside Response)
-For errors during message generation:
-- Send messages 1 & 2 normally
-- Add error field to Message 3:
+For errors during RAG/LLM generation — send Message 1 normally, then send Message 2 with an error `Text` component:
 ```json
 {
-  "beginRendering": {
+  "version": "v0.9",
+  "updateComponents": {
     "surfaceId": "qa-result",
-    "error": "LLM rate limit exceeded"
+    "components": [
+      { "id": "answer-label", "component": "Text", "text": "Error", "usageHint": "h2" },
+      { "id": "answer-body", "component": "Text", "text": "LLM rate limit exceeded", "usageHint": "body" }
+    ]
   }
 }
 ```
-- FE will display error message instead of rendering
+- FE renders the error text as a normal surface
 
 ### Frontend Error Responses
 
@@ -266,16 +252,17 @@ FE communicates errors back via console + display (no return channel):
 ### Curl Test Template
 
 ```bash
-# Test the full 3-message flow
-curl -X POST "http://localhost:3000/api/agents/knowledge-qa" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "query=test" \
-  --no-buffer
+# Test the 2-message flow against the FastAPI backend directly
+curl -sN -X POST \
+  "http://localhost:8000/api/agents/knowledge-qa?query=What+is+RAG"
 
-# Expected output (3 lines, each valid JSON):
-# {"surfaceUpdate": {...}}
-# {"dataModelUpdate": {...}}
-# {"beginRendering": {...}}
+# Expected output (2 lines, each valid JSON):
+# {"version":"v0.9","createSurface":{"surfaceId":"qa-result","catalogId":"stub"}}
+# {"version":"v0.9","updateComponents":{"surfaceId":"qa-result","components":[...]}}
+
+# Or through the Next.js proxy (requires BACKEND_URL set in frontend/.env.local):
+curl -sN -X POST \
+  "http://localhost:3000/api/agents/knowledge-qa?query=What+is+RAG"
 ```
 
 ### Frontend Test
@@ -295,7 +282,7 @@ processor.model.surfaces.forEach(s => {
 ## 8. Version & Compatibility
 
 - **Protocol Version:** A2UI v0.9
-- **SSE Version:** HTTP/1.1 text/event-stream
+- **Transport:** HTTP/1.1 POST, newline-delimited JSON stream (`text/plain; charset=utf-8`)
 - **JSON Version:** RFC 7159
 - **Backcompat:** If adding new component types, add as optional. FE will warn if unknown.
 - **Breaking Change:** If removing a required field, bump version number and notify FE team.
@@ -305,16 +292,18 @@ processor.model.surfaces.forEach(s => {
 ## 9. Implementation Checklist
 
 Backend team must verify:
-- [ ] All 3 messages sent in correct order (surfaceUpdate → dataModelUpdate → beginRendering)
-- [ ] `surfaceId` matches across all messages
-- [ ] Data model values match component data bindings (all `/path` references resolve)
+- [ ] 2 messages sent in correct order (`createSurface` → `updateComponents`)
+- [ ] Each message has `version: "v0.9"`
+- [ ] `surfaceId` matches across both messages
+- [ ] `createSurface` has NO `components` field — just `surfaceId` and `catalogId`
+- [ ] `updateComponents` uses `components[]` (full component array), not `updates[].patch`
+- [ ] Component prop names match exactly: `label` (Button/Badge), `childIds` (Card), `sources` (SourceList), `text` (Text)
 - [ ] Component IDs are unique within surface
-- [ ] No circular data binding (impossible but check anyway)
-- [ ] Timing: Messages spaced ~300ms apart (OK to tune)
-- [ ] Total time < 30s (or inform FE of custom timeout)
-- [ ] Error cases handled (500 responses or error field in Message 3)
+- [ ] SourceList sources include all relevant fields (`id`, `title`, `excerpt`, `score`, `document`, `section`, `date`, `category`)
+- [ ] Total time < 30s
+- [ ] Error cases handled: HTTP 500 before stream, or error `Text` component in Message 2
 - [ ] Tested with provided curl template
-- [ ] SSE stream closes cleanly after Message 3
+- [ ] Stream closes cleanly after Message 2
 
 ---
 
@@ -330,87 +319,74 @@ Backend team must verify:
 
 **Frontend sends:**
 ```
-POST /api/agents/knowledge-qa/ingest
+POST /api/agents/ingest
 Content-Type: multipart/form-data
+Authorization: Bearer <admin-token>
 
 Form Data:
-- files: [file1.pdf, file2.docx, ...] (multiple files allowed)
+- file: <single file> (PDF, DOCX, TXT, MD, etc.)
 - metadata: { "category": "knowledge-base", "tags": ["api", "docs"] } (optional)
 ```
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:3000/api/agents/knowledge-qa/ingest" \
+curl -X POST "http://localhost:3000/api/agents/ingest" \
   -H "Authorization: Bearer <admin-token>" \
-  -F "files=@doc1.pdf" \
-  -F "files=@doc2.docx" \
+  -F "file=@api-guide.pdf" \
   -F "metadata={\"category\":\"docs\",\"tags\":[\"api\"]}"
 ```
 
+**Notes:**
+- Single file per request (not multi-file)
+- File field name is singular: `file`
+- Bearer token required in Authorization header
+
 ### Response Specification (SSE Stream)
 
-Backend MUST stream progress updates in real-time, one message per line:
+Backend MUST stream newline-delimited JSON (JSONL), one message per line:
 
-**Message 1: ingestionStart**
+**Message Format:**
 ```json
 {
-  "ingestionStart": {
-    "batchId": "batch-12345",
-    "totalFiles": 2,
-    "totalSize": "5.2MB"
-  }
-}
-```
-
-**Messages 2-N: ingestionProgress** (repeating for each file + stage)
-```json
-{
-  "ingestionProgress": {
-    "batchId": "batch-12345",
-    "file": "doc1.pdf",
-    "stage": "parsing",
-    "progress": 25,
-    "message": "Extracting text from PDF..."
-  }
+  "step": "<step-name>",
+  "status": "<status>",
+  "message": "<human-readable text>"
 }
 ```
 
 **Progress Stages (in order):**
-1. `parsing` — Extract text from file format (PDF parser, Word parser, etc.)
-2. `chunking` — Split text into semantic chunks (~500 tokens each)
-3. `embedding` — Generate vector embeddings for each chunk
-4. `storage` — Persist vectors + metadata to vector store
+1. `upload` — File received and validated
+2. `parsing` — Extract text from file format (PDF, DOCX, TXT, MD)
+3. `chunking` — Split text into semantic chunks (~500 tokens each)
+4. `embedding` — Generate vector embeddings for each chunk
+5. `storing` — Persist vectors + metadata to vector database
 
-Each stage shows 0-100% progress. Frontend displays multi-step progress bar.
+**Status Values:**
+- `idle` — Stage not started yet
+- `in_progress` — Stage is currently running
+- `done` — Stage completed successfully
+- `error` — Stage encountered an error
 
-**Final Message: ingestionComplete**
+**Example Stream:**
 ```json
-{
-  "ingestionComplete": {
-    "batchId": "batch-12345",
-    "success": true,
-    "documentsIngested": 2,
-    "chunksCreated": 45,
-    "errors": []
-  }
-}
+{"step": "upload", "status": "done", "message": "api-guide.pdf received (2.3 MB)"}
+{"step": "parsing", "status": "in_progress", "message": "Extracting text..."}
+{"step": "parsing", "status": "done", "message": "Extracted 15,432 bytes of text"}
+{"step": "chunking", "status": "in_progress", "message": "Splitting into chunks..."}
+{"step": "chunking", "status": "done", "message": "Created 28 chunks"}
+{"step": "embedding", "status": "in_progress", "message": "Generating embeddings..."}
+{"step": "embedding", "status": "done", "message": "Generated 28 embeddings"}
+{"step": "storing", "status": "in_progress", "message": "Storing in vector database..."}
+{"step": "storing", "status": "done", "message": "Successfully stored 28 chunks"}
 ```
 
-or if errors:
-
-```json
-{
-  "ingestionComplete": {
-    "batchId": "batch-12345",
-    "success": false,
-    "documentsIngested": 1,
-    "chunksCreated": 22,
-    "errors": [
-      { "file": "doc2.docx", "reason": "Unsupported format", "severity": "error" }
-    ]
-  }
-}
-```
+**Frontend Progress Calculation:**
+Each completed step contributes to overall progress:
+- `upload`: 10%
+- `parsing`: 20%
+- `chunking`: 20%
+- `embedding`: 35%
+- `storing`: 15%
 
 ### Data Model (Document Schema)
 
@@ -420,13 +396,16 @@ See § 12 below.
 
 | Phase | Timing | What Happens |
 |---|---|---|
-| **Request arrives** | T+0ms | FE uploads files, stream opens |
-| **Message 1 sent** | T+0-100ms | Backend sends ingestionStart |
-| **Messages 2-N sent** | T+100ms - T+N*seconds | Backend streams progress per file + stage |
-| **Final message sent** | T+N*seconds | Backend sends ingestionComplete |
-| **Stream closes** | T+N*seconds+100ms | Connection closes after final message |
+| **Request arrives** | T+0ms | FE uploads file, stream opens |
+| **Messages stream** | T+0ms - T+N*seconds | Backend sends progress updates (one per stage or sub-stage) |
+| **Stream closes** | T+N*seconds | Connection closes after all stages done |
 
-**Frontend timeout:** If ingestionComplete not received by T+5min (configurable), show error: "Ingestion took too long"
+**Frontend timeout:** If last message not received by T+5min, show error: "Ingestion took too long"
+
+**Error Handling:**
+- If stage fails (status: "error"), continue streaming remaining stages
+- FE displays error message in that step's UI
+- User can retry after resolving issue (e.g., unsupported file type)
 
 ---
 

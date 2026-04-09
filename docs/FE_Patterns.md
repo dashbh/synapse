@@ -397,7 +397,7 @@ The FastAPI backend is at `backend/`. The Next.js route handler auto-proxies to 
 cd backend
 source .venv/bin/activate   # or python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # fill in ANTHROPIC_API_KEY, OPENAI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
+cp .env.example .env        # fill in OPENAI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
 python main.py              # starts on http://localhost:8000
 ```
 

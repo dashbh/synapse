@@ -233,12 +233,24 @@ Synapse uses a unified component catalog for rendering:
 - ✅ Semantic search filter panel (category + date range, wired to query URL params)
 - ✅ Admin token gate on `/ingest` endpoint (FE guard + mock 401 enforcement)
 
+### Phase 1 BE (v1.0 Backend — Added April 9, 2026)
+- ✅ FastAPI backend scaffold (main.py, CORS, routing)
+- ✅ `POST /api/agents/knowledge-qa` — RAG pipeline over SSE
+- ✅ A2UI v0.9 message builders (`createSurface` + `updateComponents`)
+- ✅ RAG pipeline: OpenAI `text-embedding-ada-002` → Supabase pgvector → Claude
+- ✅ Contract-compliant streaming (newline-delimited JSON, correct headers)
+- ✅ In-stream error handling (error `Text` component fallback)
+- ✅ Query validation (HTTP 400 for missing `query` param)
+- ✅ SourceList source formatter with all contract fields (id, title, excerpt, score, document, section, date, category, url)
+- ⏳ Operational setup pending: Supabase credentials + DB schema creation + document loading
+
 ### Phase 2 (v2.0)
 - [ ] Reflexive-Brain app implementation
 - [ ] Implicit Ingestion: Automated "Watcher" services for cloud/local folder syncing
 - [ ] Session Hydration: Persistence layer to resume conversations across refreshes
 - [ ] Real admin authentication (OAuth/SAML replacing mock token gate)
-- [ ] Backend implementation (Python FastAPI + LangChain + Claude)
+- [ ] `POST /api/agents/ingest` — real ingestion pipeline (parse → chunk → embed → store)
+- [ ] Admin bearer token guard on ingestion endpoint
 
 ### Phase 3 (v3.0+)
 - [ ] Component Extensibility: Dynamic A2UI mapping for agent-proposed custom layouts
@@ -267,9 +279,9 @@ Synapse uses a unified component catalog for rendering:
 
 ## 10. Implementation Status
 
-All v1.0 and v1.5 requirements are complete. No open deviations.
+All v1.0 and v1.5 FE requirements are complete. BE v1 code is complete; operational setup (Supabase + keys) is pending.
 
-### 🟢 Implemented & Compliant
+### 🟢 Frontend — Implemented & Compliant
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
@@ -291,9 +303,25 @@ All v1.0 and v1.5 requirements are complete. No open deviations.
 | **C16** | Semantic search filters | ✅ Done | Category + date range wired to query URL params |
 | **C17** | Admin auth gate for ingestion | ✅ Done | FE token input + mock 401 enforcement on `/ingest` |
 
+### 🟡 Backend v1 — Code Complete, Pending Operational Setup
+
+| # | Feature | Status | Notes |
+|---|---|---|---|
+| **B1** | FastAPI app scaffold | ✅ Code done | `main.py` — CORS, routing, health endpoint |
+| **B2** | `POST /api/agents/knowledge-qa` | ✅ Code done | `routes/knowledge_qa.py` — query param validation, StreamingResponse |
+| **B3** | A2UI v0.9 message builders | ✅ Code done | `app/a2ui/messages.py` — `createSurface` + `updateComponents` contract-compliant |
+| **B4** | RAG pipeline | ✅ Code done | `agents/knowledge_qa_agent.py` — embed → pgvector → Claude |
+| **B5** | Contract-compliant message sequence | ✅ Code done | 2-message flow, correct field names, full source fields including `url` |
+| **B6** | In-stream error handling | ✅ Code done | Error `Text` component fallback + HTTP 400 for missing query |
+| **B7** | Supabase DB schema | ⏳ Pending setup | SQL in `backend/README.md` — needs Supabase project + credentials |
+| **B8** | Environment configuration | ⏳ Pending setup | `.env.example` provided; needs real API keys |
+| **B9** | Document ingestion (Phase 2) | 🔲 Not started | `POST /api/agents/ingest` — parse → chunk → embed → store pipeline |
+
 ---
 
 ## 11. Checklist: Implementation Verification
+
+### Frontend
 
 | Item | Status |
 |---|---|
@@ -308,14 +336,22 @@ All v1.0 and v1.5 requirements are complete. No open deviations.
 | **Search Filters** | Filters appended to agent query URL ✓ |
 | **Ingest Auth** | 401 returned without valid Bearer token ✓ |
 
----
+### Backend v1
 
-## 12. Backward Compatibility & Deprecations
-
-- No breaking changes at platform level (AppRegistry pattern stable)
-- A2UI v0.9 locked (no v1.0 upgrade planned in v2)
-- Catalog components extensible (new components can be added without breaking existing)
-- SSE message format stable (new message types can be added without breaking streaming)
+| Item | Status |
+|---|---|
+| **2-message sequence** | `createSurface` → `updateComponents` in correct order ✓ |
+| **Message version** | Both messages carry `"version": "v0.9"` ✓ |
+| **surfaceId consistency** | Matches across both messages (`"qa-result"`) ✓ |
+| **createSurface structure** | No `components` field — only `surfaceId` + `catalogId` ✓ |
+| **updateComponents structure** | Full `components[]` array, not patch ✓ |
+| **Component prop names** | `text`, `usageHint`, `sources` match contract exactly ✓ |
+| **SourceList fields** | All 9 fields populated: id, title, excerpt, score, document, section, date, category, url ✓ |
+| **Query validation** | HTTP 400 returned when `query` param is missing or empty ✓ |
+| **Error fallback** | In-stream error `Text` component on RAG/LLM failure ✓ |
+| **Response headers** | `Content-Type: text/plain`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` ✓ |
+| **Supabase schema** | ⏳ Pending — SQL provided in `backend/README.md` |
+| **End-to-end curl test** | ⏳ Pending — blocked on Supabase credentials |
 
 ---
 
@@ -326,4 +362,5 @@ All v1.0 and v1.5 requirements are complete. No open deviations.
 | April 7, 2026 | 1.0 | Initial specification (Project Synapse finalized requirements) |
 | April 7, 2026 | 1.1 | SOLID refactor: Moved technical details to Architecture.md, Contracts.md, Governance.md; retained business spec only |
 | April 7, 2026 | 1.2 | Closed all D1–D8 deviations; updated roadmap and compliance table to reflect v1.5 close-out |
+| April 9, 2026 | 1.3 | BE v1 scaffolded: FastAPI + RAG pipeline + A2UI message builders; §8 roadmap and §10–11 updated to reflect BE v1 status |
 

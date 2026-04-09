@@ -45,7 +45,7 @@ interface UseIngestionStreamReturn {
   isDone: boolean;
   isError: boolean;
   isUnauthorized: boolean;
-  start: (file: File, token: string) => void;
+  start: (file: File) => void;
   reset: () => void;
 }
 
@@ -86,7 +86,7 @@ export function useIngestionStream(endpoint: string): UseIngestionStreamReturn {
   }, []);
 
   const start = useCallback(
-    (file: File, token: string) => {
+    (file: File) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -105,7 +105,6 @@ export function useIngestionStream(endpoint: string): UseIngestionStreamReturn {
           const response = await fetch(endpoint, {
             method: 'POST',
             body: formData,
-            headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
           });
 

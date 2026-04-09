@@ -38,7 +38,7 @@
 │  │  2. Stream Message 1: createSurface                   │   │
 │  │  3. OpenAI: embed query (text-embedding-ada-002)      │   │
 │  │  4. Supabase pgvector: similarity search              │   │
-│  │  5. Claude: generate answer from context              │   │
+│  │  5. OpenAI gpt-4o-mini: generate answer from context  │   │
 │  │  6. Stream Message 2: updateComponents                │   │
 │  │  7. Close SSE stream                                  │   │
 │  └─────────────────────────────────────────────────────────┘   │
@@ -304,7 +304,7 @@ Stream closes after Message 2.
 - **Framework:** FastAPI + uvicorn
 - **Embedding:** OpenAI `text-embedding-ada-002` (1536-dim)
 - **Vector Store:** Supabase pgvector (`match_document_chunks` RPC)
-- **LLM:** Claude (`claude-sonnet-4-6`) via Anthropic SDK
+- **LLM:** OpenAI `gpt-4o-mini` via OpenAI SDK
 - **Proxy:** Next.js route handler proxies to FastAPI when `BACKEND_URL` is set
 
 ### Integration: Next.js → FastAPI
@@ -327,7 +327,7 @@ backend/
 │   ├── a2ui/messages.py         A2UI v0.9 message builders
 │   └── routes/knowledge_qa.py   POST /api/agents/knowledge-qa
 └── agents/
-    └── knowledge_qa_agent.py    Embed → Supabase search → Claude → sources
+    └── knowledge_qa_agent.py    Embed → Supabase search → OpenAI chat → sources
 ```
 
 ---
@@ -447,7 +447,7 @@ See [Contracts.md §6](Contracts.md) for backend error shapes and [Governance.md
 ## 9. Next-Session Checkpoints
 
 - [x] **FE v1:** Frontend scaffold, catalog components, A2UI rendering layer — complete
-- [x] **BE v1:** FastAPI backend, RAG agent (OpenAI embeddings + Claude + Supabase pgvector) — complete
+- [x] **BE v1:** FastAPI backend, RAG agent (OpenAI embeddings + gpt-4o-mini + Supabase pgvector) — complete
 - [ ] **DB Setup:** Run Supabase SQL (pgvector extension, `document_chunks` table, `match_document_chunks` RPC) — see `backend/README.md`
 - [ ] **Infra:** docker-compose for local full-stack dev (frontend + backend + postgres)
 - [ ] **Ingest v2:** Real document ingestion pipeline (`/api/agents/ingest` endpoint)
@@ -455,7 +455,7 @@ See [Contracts.md §6](Contracts.md) for backend error shapes and [Governance.md
 
 **Decided:**
 - RAG backend: Supabase pgvector
-- LLM: Claude (`claude-sonnet-4-6`) via Anthropic SDK
+- LLM: OpenAI `gpt-4o-mini` via OpenAI SDK
 - Embeddings: OpenAI `text-embedding-ada-002`
 - Orchestration: Direct SDK calls (no LangChain)
 

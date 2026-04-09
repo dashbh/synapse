@@ -5,7 +5,6 @@ load_dotenv()
 
 
 class Settings:
-    anthropic_api_key: str = os.environ["ANTHROPIC_API_KEY"]
     openai_api_key: str = os.environ["OPENAI_API_KEY"]
     supabase_url: str = os.environ["SUPABASE_URL"]
     supabase_anon_key: str = os.environ["SUPABASE_ANON_KEY"]

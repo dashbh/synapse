@@ -1,12 +1,14 @@
 import json
+import logging
 import asyncio
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.a2ui.messages import create_surface_msg, update_components_msg, SURFACE_ID, VERSION
 import agents.knowledge_qa_agent as agent
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 DELAY_MS = 0.35  # seconds between Message 1 and Message 2
 
@@ -51,13 +53,19 @@ async def _stream(
         answer, sources = await agent.run(query, category, date_from, date_to)
         yield json.dumps(update_components_msg(answer, sources)) + "\n"
     except Exception as exc:
-        yield json.dumps(_error_components(str(exc))) + "\n"
+        logger.error("RAG pipeline error for query=%r: %s", query, exc, exc_info=True)
+        yield json.dumps(_error_components(
+            "Something went wrong while processing your request. Please try again."
+        )) + "\n"
 
 
 @router.post("/knowledge-qa")
 async def knowledge_qa(request: Request):
     params = request.query_params
-    query = params.get("query", "").strip() or "(no query)"
+    query = params.get("query", "").strip()
+    if not query:
+        return JSONResponse(status_code=400, content={"detail": "query parameter is required"})
+
     category = params.get("category") or None
     date_from = params.get("dateFrom") or None
     date_to = params.get("dateTo") or None

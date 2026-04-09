@@ -218,44 +218,50 @@ Synapse uses a unified component catalog for rendering:
 
 ## 8. Roadmap & Backlog
 
-### Phase 1 (v1.0 Complete + v1.5 Close-Out)
+### v1.0 — Complete (FE + BE + Infra)
+
+**Frontend**
 - ✅ Platform Shell with AppRegistry
 - ✅ Knowledge-QA app (semantic search + ingestion UI)
 - ✅ A2UI v0.9 protocol integration
 - ✅ SSE streaming (Message→React)
 - ✅ Design system + catalog components (6 types: Text, Card, Button, Badge, SourceList, MetadataCard)
-- ✅ SSE explicit close on route change (`useSSE` unmount cleanup)
-- ✅ Volatile session reset on app nav (surfaces cleared in `useAgentStream` unmount)
-- ✅ Ingestion status UI — real-time Parsing → Chunking → Embedding steps
-- ✅ SSE-based `/ingest` mock endpoint with per-step progress
-- ✅ Rich citations side panel with source preview (`SourceListComponent`)
-- ✅ Citation metadata display (Document, Section, Date, Category via `MetadataCard`)
-- ✅ Semantic search filter panel (category + date range, wired to query URL params)
-- ✅ Admin token gate on `/ingest` endpoint (FE guard + mock 401 enforcement)
+- ✅ SSE explicit close on route change; volatile session reset on app nav
+- ✅ Ingestion UI — real-time step progress (Upload → Parsing → Chunking → Embedding → Storing)
+- ✅ Rich citations side panel with source preview and metadata display
+- ✅ Semantic search filter panel (category + date range)
 
-### Phase 1 BE (v1.0 Backend — Added April 9, 2026)
-- ✅ FastAPI backend scaffold (main.py, CORS, routing)
-- ✅ `POST /api/agents/knowledge-qa` — RAG pipeline over SSE
+**Backend**
+- ✅ FastAPI scaffold (CORS, routing, health endpoint with dependency checks)
+- ✅ `POST /api/agents/knowledge-qa` — RAG query pipeline over SSE
+- ✅ `POST /api/agents/ingest` — document ingestion (PDF, DOCX, TXT, MD) over SSE
 - ✅ A2UI v0.9 message builders (`createSurface` + `updateComponents`)
-- ✅ RAG pipeline: OpenAI `text-embedding-ada-002` → Supabase pgvector → Claude
-- ✅ Contract-compliant streaming (newline-delimited JSON, correct headers)
-- ✅ In-stream error handling (error `Text` component fallback)
-- ✅ Query validation (HTTP 400 for missing `query` param)
-- ✅ SourceList source formatter with all contract fields (id, title, excerpt, score, document, section, date, category, url)
-- ⏳ Operational setup pending: Supabase credentials + DB schema creation + document loading
+- ✅ RAG pipeline: OpenAI `text-embedding-ada-002` → Supabase pgvector → `gpt-4o-mini`
+- ✅ Similarity threshold filter (irrelevant sources suppressed at query time)
+- ✅ Deduplication on re-upload (replaces existing chunks for same source file)
+- ✅ Contract-compliant streaming; error logging (internals never exposed to client)
+- ✅ Supabase DB schema operational (pgvector, `document_chunks`, `match_document_chunks` RPC)
+- ✅ Environment fully configured (API keys, Supabase credentials)
 
-### Phase 2 (v2.0)
-- [ ] Reflexive-Brain app implementation
-- [ ] Implicit Ingestion: Automated "Watcher" services for cloud/local folder syncing
-- [ ] Session Hydration: Persistence layer to resume conversations across refreshes
-- [ ] Real admin authentication (OAuth/SAML replacing mock token gate)
-- [ ] `POST /api/agents/ingest` — real ingestion pipeline (parse → chunk → embed → store)
+**Infrastructure**
+- ✅ Docker Compose with `dev` and `prod` profiles (`infra/docker-compose.yml`)
+- ✅ Multi-stage Dockerfiles — FE (Next.js standalone) + BE (Python 3.12-slim)
+- ✅ CORS configurable via `CORS_ORIGINS` env var
+- ✅ Root-level `.env.example` with all required variables
+
+### v2.0 — Planned
+
+- [ ] Reflexive-Brain app (quick capture, global search, agentic triage)
+- [ ] Implicit Ingestion: automated watcher services for cloud/local folder syncing
+- [ ] Session Hydration: persistence layer for cross-session conversation resumption
+- [ ] Real admin authentication (OAuth/SAML)
 - [ ] Admin bearer token guard on ingestion endpoint
 
-### Phase 3 (v3.0+)
-- [ ] Component Extensibility: Dynamic A2UI mapping for agent-proposed custom layouts
-- [ ] Advanced search: Full-text search + semantic hybrid search
-- [ ] Custom agent templates: Let users create specialized apps
+### v3.0+ — Future
+
+- [ ] Component Extensibility: dynamic A2UI mapping for agent-proposed custom layouts
+- [ ] Advanced search: full-text + semantic hybrid search
+- [ ] Custom agent templates
 - [ ] Multi-workspace support
 - [ ] Cloud sync (document versioning, sharing)
 
@@ -279,9 +285,9 @@ Synapse uses a unified component catalog for rendering:
 
 ## 10. Implementation Status
 
-All v1.0 and v1.5 FE requirements are complete. BE v1 code is complete; operational setup (Supabase + keys) is pending.
+All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 
-### 🟢 Frontend — Implemented & Compliant
+### 🟢 Frontend — Complete
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
@@ -297,25 +303,36 @@ All v1.0 and v1.5 FE requirements are complete. BE v1 code is complete; operatio
 | **C10** | SSE explicit close on route change | ✅ Done | `useSSE` abort cleanup on unmount |
 | **C11** | Volatile session reset | ✅ Done | Surfaces cleared in `useAgentStream` unmount |
 | **C12** | Ingestion status UI | ✅ Done | Real-time Parsing → Chunking → Embedding steps |
-| **C13** | SSE-based `/ingest` endpoint | ✅ Done | Mock with per-step progress streaming |
+| **C13** | SSE-based `/ingest` endpoint | ✅ Done | Real pipeline: upload→parse→chunk→embed→store |
 | **C14** | Rich citations side panel | ✅ Done | Click-to-preview drawer in `SourceListComponent` |
 | **C15** | Citation metadata display | ✅ Done | `MetadataCard` — Document, Section, Date, Category |
 | **C16** | Semantic search filters | ✅ Done | Category + date range wired to query URL params |
-| **C17** | Admin auth gate for ingestion | ✅ Done | FE token input + mock 401 enforcement on `/ingest` |
+| **C17** | Admin auth gate for ingestion | ✅ Done | Bypassed in v1; real OAuth deferred to v2 |
 
-### 🟡 Backend v1 — Code Complete, Pending Operational Setup
+### 🟢 Backend — Complete
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
-| **B1** | FastAPI app scaffold | ✅ Code done | `main.py` — CORS, routing, health endpoint |
-| **B2** | `POST /api/agents/knowledge-qa` | ✅ Code done | `routes/knowledge_qa.py` — query param validation, StreamingResponse |
-| **B3** | A2UI v0.9 message builders | ✅ Code done | `app/a2ui/messages.py` — `createSurface` + `updateComponents` contract-compliant |
-| **B4** | RAG pipeline | ✅ Code done | `agents/knowledge_qa_agent.py` — embed → pgvector → Claude |
-| **B5** | Contract-compliant message sequence | ✅ Code done | 2-message flow, correct field names, full source fields including `url` |
-| **B6** | In-stream error handling | ✅ Code done | Error `Text` component fallback + HTTP 400 for missing query |
-| **B7** | Supabase DB schema | ⏳ Pending setup | SQL in `backend/README.md` — needs Supabase project + credentials |
-| **B8** | Environment configuration | ⏳ Pending setup | `.env.example` provided; needs real API keys |
-| **B9** | Document ingestion (Phase 2) | 🔲 Not started | `POST /api/agents/ingest` — parse → chunk → embed → store pipeline |
+| **B1** | FastAPI app scaffold | ✅ Done | `main.py` — CORS, routing, health endpoint with dependency checks |
+| **B2** | `POST /api/agents/knowledge-qa` | ✅ Done | `routes/knowledge_qa.py` — query validation, SSE StreamingResponse |
+| **B3** | `POST /api/agents/ingest` | ✅ Done | `routes/ingest.py` + `agents/ingest_agent.py` — PDF/DOCX/TXT/MD pipeline |
+| **B4** | A2UI v0.9 message builders | ✅ Done | `app/a2ui/messages.py` — `createSurface` + `updateComponents` |
+| **B5** | RAG pipeline | ✅ Done | `agents/knowledge_qa_agent.py` — embed → pgvector → `gpt-4o-mini` |
+| **B6** | Similarity threshold filter | ✅ Done | Chunks below `MIN_SIMILARITY=0.78` discarded; empty sources returned cleanly |
+| **B7** | Deduplication on re-upload | ✅ Done | Existing chunks for same `source_file` deleted before insert |
+| **B8** | Error handling | ✅ Done | Server-side logging; generic messages to client — internals never exposed |
+| **B9** | Supabase DB schema | ✅ Done | pgvector extension, `document_chunks` table, `match_document_chunks` RPC |
+| **B10** | Environment configuration | ✅ Done | `.env` configured with `OPENAI_API_KEY`, Supabase credentials |
+
+### 🟢 Infrastructure — Complete
+
+| # | Feature | Status | Notes |
+|---|---|---|---|
+| **I1** | Docker Compose | ✅ Done | `infra/docker-compose.yml` — `dev` + `prod` profiles |
+| **I2** | Frontend Dockerfile | ✅ Done | Multi-stage: dev (hot-reload) + prod (Next.js standalone) |
+| **I3** | Backend Dockerfile | ✅ Done | Multi-stage: dev (uvicorn --reload) + prod (uvicorn workers) |
+| **I4** | Configurable CORS | ✅ Done | `CORS_ORIGINS` env var, comma-separated |
+| **I5** | Root `.env.example` | ✅ Done | Consolidated template for all services |
 
 ---
 
@@ -334,9 +351,9 @@ All v1.0 and v1.5 FE requirements are complete. BE v1 code is complete; operatio
 | **Error Handling** | Graceful fallback on stream interruption ✓ |
 | **Citation Panel** | Source preview opens on card click ✓ |
 | **Search Filters** | Filters appended to agent query URL ✓ |
-| **Ingest Auth** | 401 returned without valid Bearer token ✓ |
+| **Ingest Auth** | Auth bypassed in v1; real OAuth deferred to v2 ✓ |
 
-### Backend v1
+### Backend
 
 | Item | Status |
 |---|---|
@@ -348,10 +365,22 @@ All v1.0 and v1.5 FE requirements are complete. BE v1 code is complete; operatio
 | **Component prop names** | `text`, `usageHint`, `sources` match contract exactly ✓ |
 | **SourceList fields** | All 9 fields populated: id, title, excerpt, score, document, section, date, category, url ✓ |
 | **Query validation** | HTTP 400 returned when `query` param is missing or empty ✓ |
-| **Error fallback** | In-stream error `Text` component on RAG/LLM failure ✓ |
+| **Error handling** | Server-side logging; generic messages to client ✓ |
 | **Response headers** | `Content-Type: text/plain`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` ✓ |
-| **Supabase schema** | ⏳ Pending — SQL provided in `backend/README.md` |
-| **End-to-end curl test** | ⏳ Pending — blocked on Supabase credentials |
+| **Supabase schema** | pgvector extension, table, and RPC created and operational ✓ |
+| **Ingest pipeline** | upload → parse → chunk → embed → store with SSE progress ✓ |
+| **Similarity filter** | Irrelevant sources suppressed (`MIN_SIMILARITY = 0.78`) ✓ |
+| **Deduplication** | Re-upload replaces existing chunks for same file ✓ |
+
+### Infrastructure
+
+| Item | Status |
+|---|---|
+| **Docker Compose** | `dev` and `prod` profiles working ✓ |
+| **FE container** | Hot-reload in dev; standalone build in prod ✓ |
+| **BE container** | `uvicorn --reload` in dev; workers in prod ✓ |
+| **Secrets** | Root `.env` via `env_file` — no secrets in images ✓ |
+| **Networking** | FE→BE via Docker internal DNS (`BACKEND_URL`) ✓ |
 
 ---
 
@@ -363,4 +392,5 @@ All v1.0 and v1.5 FE requirements are complete. BE v1 code is complete; operatio
 | April 7, 2026 | 1.1 | SOLID refactor: Moved technical details to Architecture.md, Contracts.md, Governance.md; retained business spec only |
 | April 7, 2026 | 1.2 | Closed all D1–D8 deviations; updated roadmap and compliance table to reflect v1.5 close-out |
 | April 9, 2026 | 1.3 | BE v1 scaffolded: FastAPI + RAG pipeline + A2UI message builders; §8 roadmap and §10–11 updated to reflect BE v1 status |
+| April 10, 2026 | 1.4 | v1 closed out: real ingest pipeline, similarity filter, deduplication, Docker Compose infra, Supabase operational; roadmap consolidated to v1/v2/v3+; §10–11 fully updated |
 

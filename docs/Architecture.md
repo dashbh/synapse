@@ -1,7 +1,7 @@
 # A2UIPlatform Architecture Overview
 
-**Last Updated:** April 2, 2026  
-**Status:** FE architecture locked, BE/Infra outline pending
+**Last Updated:** April 10, 2026  
+**Status:** v1.0 complete — FE, BE, and Infra all implemented and operational
 
 ---
 
@@ -31,7 +31,7 @@
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    BACKEND (Python FastAPI)  [v2]               │
+│                    BACKEND (Python FastAPI)                     │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ POST /api/agents/knowledge-qa?query=...               │   │
 │  │  1. Validate query + read filter params               │   │
@@ -48,13 +48,83 @@
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    DATA LAYER (Supabase)  [v2]                  │
+│                    DATA LAYER (Supabase — hosted)               │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ pgvector embeddings table                              │   │
 │  │ documents table (title, excerpt, source)              │   │
 │  │ Semantic search via koalas library                    │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+### System Architecture (Mermaid)
+
+```mermaid
+flowchart TB
+    subgraph browser["Browser"]
+        ui["Next.js / React\nA2UI v0.9 Rendering"]
+    end
+
+    subgraph compose["Docker Compose — infra/"]
+        fe["Frontend :3000\nNext.js"]
+        be["Backend :8000\nFastAPI + uvicorn"]
+    end
+
+    subgraph cloud["Cloud Services"]
+        oai["OpenAI API\ntext-embedding-ada-002 · gpt-4o-mini"]
+        sb["Supabase (hosted)\nPostgreSQL + pgvector"]
+    end
+
+    ui <-->|"HTTP / SSE stream"| fe
+    fe -->|"proxy via BACKEND_URL"| be
+    be -->|"embed query · generate answer"| oai
+    be <-->|"vector search · insert chunks"| sb
+```
+
+### Query Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant FE as Next.js
+    participant BE as FastAPI
+    participant OAI as OpenAI
+    participant DB as Supabase pgvector
+
+    User->>FE: POST /api/agents/knowledge-qa?query=...
+    FE->>BE: proxy
+    BE-->>FE: ① createSurface (A2UI v0.9)
+    BE->>OAI: embed(query) — text-embedding-ada-002
+    OAI-->>BE: vector[1536]
+    BE->>DB: match_document_chunks(vector, k=5, threshold=0.78)
+    DB-->>BE: relevant chunks
+    BE->>OAI: chat.complete(prompt + chunks) — gpt-4o-mini
+    OAI-->>BE: answer text
+    BE-->>FE: ② updateComponents (A2UI v0.9)
+    FE-->>User: answer + source cards rendered
+```
+
+### Ingestion Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant FE as Next.js
+    participant BE as FastAPI
+    participant OAI as OpenAI
+    participant DB as Supabase pgvector
+
+    User->>FE: POST /api/agents/ingest (multipart file)
+    FE->>BE: proxy
+    BE-->>FE: SSE: upload done
+    BE-->>FE: SSE: parsing in_progress → done
+    BE-->>FE: SSE: chunking in_progress → done
+    BE->>OAI: embeddings.create(chunks[]) — text-embedding-ada-002
+    OAI-->>BE: vectors[]
+    BE-->>FE: SSE: embedding done
+    BE->>DB: DELETE existing chunks (dedup) + INSERT new chunks
+    BE-->>FE: SSE: storing done
+    FE-->>User: "Ingested successfully"
 ```
 
 ---
@@ -320,44 +390,52 @@ Browser → POST /api/agents/knowledge-qa?...
 
 ```
 backend/
-├── main.py                      FastAPI app + CORS
+├── main.py                      FastAPI app + CORS + health check
 ├── requirements.txt
 ├── app/
 │   ├── config.py                Env var loading
 │   ├── a2ui/messages.py         A2UI v0.9 message builders
-│   └── routes/knowledge_qa.py   POST /api/agents/knowledge-qa
+│   └── routes/
+│       ├── knowledge_qa.py      POST /api/agents/knowledge-qa
+│       └── ingest.py            POST /api/agents/ingest
 └── agents/
-    └── knowledge_qa_agent.py    Embed → Supabase search → OpenAI chat → sources
+    ├── knowledge_qa_agent.py    Embed → similarity search → chat → sources
+    └── ingest_agent.py          Parse → chunk → embed → store (SSE progress)
 ```
 
 ---
 
-## 4. Infrastructure (v2 — Outline Only)
+## 4. Infrastructure (v1 — Implemented)
 
-### Local Dev (docker-compose)
+### Docker Compose (`infra/docker-compose.yml`)
 
-```yaml
-services:
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-  postgres:
-    image: pgvector/pgvector:0.4.1-pg15
-    environment:
-      POSTGRES_PASSWORD: dev
+Two profiles — `dev` (hot-reload, volume mounts) and `prod` (optimised builds, no mounts):
+
+```
+infra/
+└── docker-compose.yml    --profile dev | --profile prod
+
+frontend/
+├── Dockerfile            dev: npm run dev (predev → tokens → next dev)
+└── .dockerignore         prod: multi-stage → Next.js standalone output
+
+backend/
+├── Dockerfile            dev: python main.py (uvicorn --reload)
+└── .dockerignore         prod: uvicorn workers, code baked in
+```
+
+**Usage:**
+```bash
+cp .env.example .env      # fill in OPENAI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
+docker compose -f infra/docker-compose.yml --profile dev up --build
 ```
 
 ### Deployment (Future)
 
 - **FE:** Vercel (Next.js native)
 - **BE:** Railway or Fly.io (Python FastAPI)
-- **DB:** Supabase managed pgvector
-- **IaC:** Terraform (infra/ folder)
+- **DB:** Supabase managed pgvector (already hosted)
+- **IaC:** Terraform (`infra/terraform/`)
 
 ---
 
@@ -444,20 +522,28 @@ See [Contracts.md §6](Contracts.md) for backend error shapes and [Governance.md
 
 ---
 
-## 9. Next-Session Checkpoints
+## 9. v1 Status & Next Priorities
 
-- [x] **FE v1:** Frontend scaffold, catalog components, A2UI rendering layer — complete
-- [x] **BE v1:** FastAPI backend, RAG agent (OpenAI embeddings + gpt-4o-mini + Supabase pgvector) — complete
-- [ ] **DB Setup:** Run Supabase SQL (pgvector extension, `document_chunks` table, `match_document_chunks` RPC) — see `backend/README.md`
-- [ ] **Infra:** docker-compose for local full-stack dev (frontend + backend + postgres)
-- [ ] **Ingest v2:** Real document ingestion pipeline (`/api/agents/ingest` endpoint)
-- [ ] **Auth v2:** Replace mock bearer token gate with real OAuth/SAML
+### v1.0 — Complete ✅
 
-**Decided:**
-- RAG backend: Supabase pgvector
-- LLM: OpenAI `gpt-4o-mini` via OpenAI SDK
+- [x] **FE:** Platform Shell, Knowledge-QA app, A2UI v0.9, SSE streaming, catalog components
+- [x] **BE:** FastAPI, RAG query pipeline, document ingestion pipeline, health endpoint
+- [x] **DB:** Supabase operational — pgvector, `document_chunks` table, `match_document_chunks` RPC
+- [x] **Infra:** Docker Compose (`dev` + `prod` profiles), multi-stage Dockerfiles
+
+### v2.0 — Next
+
+- [ ] **Reflexive-Brain app** — quick capture, global search, agentic triage
+- [ ] **Auth:** Real OAuth/SAML replacing the v1 bypass on `/ingest`
+- [ ] **Session Hydration** — persist conversations across refreshes
+- [ ] **Implicit Ingestion** — automated watcher for cloud/local folder sync
+
+**Architecture decisions (locked):**
+- LLM: OpenAI `gpt-4o-mini`
 - Embeddings: OpenAI `text-embedding-ada-002`
+- Vector store: Supabase pgvector
 - Orchestration: Direct SDK calls (no LangChain)
+- Transport: SSE over plain fetch (no WebSocket)
 
 ---
 

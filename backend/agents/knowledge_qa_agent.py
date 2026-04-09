@@ -5,7 +5,7 @@ Pipeline:
   1. Embed the query (OpenAI text-embedding-ada-002, 1536-dim)
   2. Search Supabase pgvector via match_document_chunks RPC
   3. Build prompt from top-K chunks
-  4. Call Claude to generate an answer
+  4. Call OpenAI chat completion to generate an answer
   5. Return (answer, sources) for A2UI message assembly
 
 Requires Supabase function:
@@ -14,18 +14,17 @@ Requires Supabase function:
 
 import asyncio
 from openai import AsyncOpenAI
-from anthropic import AsyncAnthropic
 from supabase import create_client, Client
 
 from app.config import settings
 
 _openai = AsyncOpenAI(api_key=settings.openai_api_key)
-_anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
 _supabase: Client = create_client(settings.supabase_url, settings.supabase_anon_key)
 
 EMBEDDING_MODEL = "text-embedding-ada-002"
-CLAUDE_MODEL = "claude-sonnet-4-6"
+CHAT_MODEL = "gpt-4o-mini"
 TOP_K = 5
+MIN_SIMILARITY = 0.78  # chunks below this score are not relevant — raise to tighten, lower to broaden
 
 
 async def _embed(text: str) -> list[float]:
@@ -83,6 +82,7 @@ def _format_sources(chunks: list[dict]) -> list[dict]:
             "section": meta.get("section", ""),
             "date": str(chunk.get("upload_date", ""))[:10],
             "category": chunk.get("category", ""),
+            "url": meta.get("url", ""),
         })
     return sources
 
@@ -105,16 +105,22 @@ async def run(
         _search_chunks, embedding, category, date_from, date_to
     )
 
-    # 3. Generate answer
-    prompt = _build_prompt(query, chunks)
-    response = await _anthropic.messages.create(
-        model=CLAUDE_MODEL,
+    # 3. Filter by minimum similarity — discard chunks that are not relevant
+    relevant_chunks = [c for c in chunks if float(c.get("similarity", 0)) >= MIN_SIMILARITY]
+
+    if not relevant_chunks:
+        return "I don't have any relevant information in the knowledge base to answer that question.", []
+
+    # 4. Generate answer
+    prompt = _build_prompt(query, relevant_chunks)
+    response = await _openai.chat.completions.create(
+        model=CHAT_MODEL,
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
-    answer = response.content[0].text.strip()
+    answer = response.choices[0].message.content.strip()
 
-    # 4. Format sources
-    sources = _format_sources(chunks)
+    # 5. Format sources
+    sources = _format_sources(relevant_chunks)
 
     return answer, sources

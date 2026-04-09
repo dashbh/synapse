@@ -1,0 +1,80 @@
+name: a2uiplatform
+
+services:
+
+  # ─────────────── DEV: Frontend ────────────────────────────────────────────
+  frontend-dev:
+    profiles: [dev]
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount individual dirs — keeps Linux node_modules in image intact.
+      # Never mount ../frontend:/app (would shadow Linux node_modules with macOS binaries).
+      - ../frontend/src:/app/src
+      - ../frontend/scripts:/app/scripts
+      - ../frontend/public:/app/public
+      - ../frontend/next.config.ts:/app/next.config.ts
+      - ../frontend/tsconfig.json:/app/tsconfig.json
+      - ../frontend/postcss.config.mjs:/app/postcss.config.mjs
+      - ../frontend/components.json:/app/components.json
+    env_file:
+      - ../.env
+    environment:
+      - NODE_ENV=development
+      # Uses Docker internal DNS — backend-dev resolves within the compose network
+      - BACKEND_URL=http://backend-dev:8000
+    depends_on:
+      - backend-dev
+
+  # ─────────────── DEV: Backend ─────────────────────────────────────────────
+  backend-dev:
+    profiles: [dev]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app
+      # Anonymous anchor: prevents a host .venv from shadowing image site-packages
+      - /app/.venv
+    env_file:
+      - ../.env
+    environment:
+      - PORT=8000
+
+  # ─────────────── PROD: Frontend ───────────────────────────────────────────
+  frontend-prod:
+    profiles: [prod]
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      target: prod
+    ports:
+      - "3000:3000"
+    env_file:
+      - ../.env
+    environment:
+      - NODE_ENV=production
+      - BACKEND_URL=http://backend-prod:8000
+    depends_on:
+      - backend-prod
+
+  # ─────────────── PROD: Backend ────────────────────────────────────────────
+  backend-prod:
+    profiles: [prod]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: prod
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      - PORT=8000

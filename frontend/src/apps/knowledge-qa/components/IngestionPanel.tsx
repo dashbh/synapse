@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
+import { Upload, FileText, Scissors, Cpu, Database } from 'lucide-react';
 import {
   useIngestionStream,
   STEP_ORDER,
@@ -16,6 +17,14 @@ const STEP_LABELS: Record<IngestionStep, string> = {
   chunking: 'Chunking',
   embedding: 'Embedding',
   storing: 'Storing',
+};
+
+const STEP_ICONS: Record<IngestionStep, React.ElementType> = {
+  upload: Upload,
+  parsing: FileText,
+  chunking: Scissors,
+  embedding: Cpu,
+  storing: Database,
 };
 
 // ---------------------------------------------------------------------------
@@ -74,7 +83,10 @@ function StepperRow({
 
       {/* Content */}
       <div className="pb-3 min-w-0 flex-1">
-        <p className={`text-xs ${labelColor}`}>{STEP_LABELS[step]}</p>
+        <div className="flex items-center gap-1.5">
+          {(() => { const Icon = STEP_ICONS[step]; return <Icon className={`w-3.5 h-3.5 shrink-0 ${labelColor}`} />; })()}
+          <p className={`text-xs ${labelColor}`}>{STEP_LABELS[step]}</p>
+        </div>
         {state.message && state.status !== 'idle' && (
           <p className="text-[11px] text-[var(--color-neutral-400)] mt-0.5 truncate">{state.message}</p>
         )}
@@ -123,20 +135,17 @@ export function IngestionPanel() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [adminToken, setAdminToken] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
-  const tokenProvided = adminToken.trim().length > 0;
   const hasStarted = STEP_ORDER.some((s) => steps[s].status !== 'idle');
 
   const handleFile = useCallback(
     (file: File) => {
-      if (!tokenProvided) return;
       setFileName(file.name);
       reset();
-      start(file, adminToken.trim());
+      start(file);
     },
-    [start, reset, adminToken, tokenProvided]
+    [start, reset]
   );
 
   const handleFileInput = useCallback(
@@ -180,21 +189,6 @@ export function IngestionPanel() {
         Upload Document
       </p>
 
-      {/* Admin token */}
-      <div className="flex flex-col gap-1">
-        <label htmlFor="admin-token" className="text-[10px] font-bold tracking-widest uppercase text-[var(--color-neutral-400)]">
-          Admin Token
-        </label>
-        <input
-          id="admin-token"
-          type="password"
-          value={adminToken}
-          onChange={(e) => setAdminToken(e.target.value)}
-          placeholder="Required to upload"
-          className="w-full rounded-lg border border-[var(--color-neutral-200)] bg-[var(--color-neutral-50)] px-3 py-1.5 text-xs text-[var(--color-neutral-700)] placeholder:text-[var(--color-neutral-400)] focus:border-[var(--color-primary-400)] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-100)] transition-all"
-        />
-      </div>
-
       {/* Drag & drop zone */}
       <div>
         <input
@@ -204,7 +198,7 @@ export function IngestionPanel() {
           className="hidden"
           id="ingest-file"
           onChange={handleFileInput}
-          disabled={isStreaming || !tokenProvided}
+          disabled={isStreaming}
         />
         <label
           htmlFor="ingest-file"
@@ -213,7 +207,7 @@ export function IngestionPanel() {
           onDrop={handleDrop}
           className={[
             'flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-all cursor-pointer',
-            isStreaming || !tokenProvided
+            isStreaming
               ? 'border-[var(--color-neutral-200)] bg-[var(--color-neutral-50)] opacity-60 cursor-not-allowed'
               : isDragging
               ? 'border-[var(--color-primary-400)] bg-[var(--color-primary-50)] shadow-[var(--shadow-glow-primary-inset)]'

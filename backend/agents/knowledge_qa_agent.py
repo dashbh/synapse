@@ -92,9 +92,10 @@ async def run(
     category: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-) -> tuple[str, list[dict]]:
+) -> tuple[str, list[dict], dict]:
     """
-    Returns (answer_text, sources_list).
+    Returns (answer_text, sources_list, usage_info).
+    usage_info: {model, prompt_tokens, completion_tokens, total_tokens}
     Raises on Supabase or LLM errors — caller handles via A2UI error message.
     """
     # 1. Embed
@@ -109,7 +110,11 @@ async def run(
     relevant_chunks = [c for c in chunks if float(c.get("similarity", 0)) >= MIN_SIMILARITY]
 
     if not relevant_chunks:
-        return "I don't have any relevant information in the knowledge base to answer that question.", []
+        return (
+            "I don't have any relevant information in the knowledge base to answer that question.",
+            [],
+            {},
+        )
 
     # 4. Generate answer
     prompt = _build_prompt(query, relevant_chunks)
@@ -120,7 +125,15 @@ async def run(
     )
     answer = response.choices[0].message.content.strip()
 
-    # 5. Format sources
+    # 5. Capture token usage
+    usage = {
+        "model": CHAT_MODEL,
+        "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+        "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+        "total_tokens": response.usage.total_tokens if response.usage else 0,
+    }
+
+    # 6. Format sources
     sources = _format_sources(relevant_chunks)
 
-    return answer, sources
+    return answer, sources, usage

@@ -160,7 +160,8 @@ App Root (Next.js)
                     ├─ CardComponent (shadcn wrapper)
                     ├─ ButtonComponent (interaction)
                     ├─ BadgeComponent (metadata)
-                    └─ SourceListComponent (custom — source attribution)
+                    ├─ SourceListComponent (custom — source attribution)
+                    └─ MarkdownComponent (react-markdown + remark-gfm)
 ```
 
 ### State Ownership (Critical)
@@ -476,11 +477,15 @@ New apps added to AppRegistry only. No root changes.
 ### Catalog Extensibility
 ```
 src/a2ui/catalog/components/
-├─ TextComponent      (v1)
-├─ CardComponent      (v1)
-├─ SourceListComponent (v1 custom)
-├─ ImageComponent     (v2+)
-├─ FormComponent      (v2+)
+├─ TextComponent       (v1 — h1/h2/h3/body/caption hints)
+├─ CardComponent       (v1)
+├─ ButtonComponent     (v1)
+├─ BadgeComponent      (v1)
+├─ SourceListComponent (v1 custom — citation drawer)
+├─ MetadataCard        (v1 — document/section/date/category)
+├─ MarkdownComponent   (v1 — react-markdown + remark-gfm)
+├─ ImageComponent      (v2+)
+├─ FormComponent       (v2+)
 └─ ...
 ```
 New components added to catalog + registered in ComponentHost. No renderer changes.

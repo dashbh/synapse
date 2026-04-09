@@ -295,8 +295,8 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **C2** | A2UI v0.9 protocol | ✅ Done | MessageProcessor validates and renders |
 | **C3** | SSE streaming | ✅ Done | `useAgentStream` → `useSSE` POST streaming |
 | **C4** | React + Tailwind + shadcn/ui stack | ✅ Done | Design tokens mapped correctly |
-| **C5** | Knowledge-QA query interface | ✅ Done | QueryInput + SearchFilters + StreamStatusBar |
-| **C6** | Catalog components (6 types) | ✅ Done | Text, Card, Button, Badge, SourceList, MetadataCard |
+| **C5** | Knowledge-QA query interface | ✅ Done | QueryInput + StreamStatusBar (search filters removed in v1 closeout) |
+| **C6** | Catalog components (7 types) | ✅ Done | Text, Card, Button, Badge, SourceList, MetadataCard, Markdown |
 | **C7** | SOLID principles enforcement | ✅ Done | Layer boundaries strictly enforced |
 | **C8** | Graceful stream interruption | ✅ Done | Error boundary + retry UI |
 | **C9** | TypeScript strict mode | ✅ Done | No `any`, all A2UI types validated |
@@ -317,7 +317,7 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **B2** | `POST /api/agents/knowledge-qa` | ✅ Done | `routes/knowledge_qa.py` — query validation, SSE StreamingResponse |
 | **B3** | `POST /api/agents/ingest` | ✅ Done | `routes/ingest.py` + `agents/ingest_agent.py` — PDF/DOCX/TXT/MD pipeline |
 | **B4** | A2UI v0.9 message builders | ✅ Done | `app/a2ui/messages.py` — `createSurface` + `updateComponents` |
-| **B5** | RAG pipeline | ✅ Done | `agents/knowledge_qa_agent.py` — embed → pgvector → `gpt-4o-mini` |
+| **B5** | RAG pipeline | ✅ Done | `agents/knowledge_qa_agent.py` — embed → pgvector → `gpt-4o-mini`; returns model name + token usage shown in UI |
 | **B6** | Similarity threshold filter | ✅ Done | Chunks below `MIN_SIMILARITY=0.78` discarded; empty sources returned cleanly |
 | **B7** | Deduplication on re-upload | ✅ Done | Existing chunks for same `source_file` deleted before insert |
 | **B8** | Error handling | ✅ Done | Server-side logging; generic messages to client — internals never exposed |

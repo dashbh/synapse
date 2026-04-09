@@ -8,7 +8,6 @@ import { StreamStatus } from '@/a2ui/transport/types';
 import { QueryInput } from './components/QueryInput';
 import { StreamStatusBar } from './components/StreamStatusBar';
 import { IngestionPanel } from './components/IngestionPanel';
-import { SearchFilters, type SearchFilterValues } from './components/SearchFilters';
 import { KNOWLEDGE_QA_CONFIG } from './config';
 
 function KnowledgeStats() {
@@ -102,36 +101,27 @@ function SidebarToggle({ open, onClick }: { open: boolean; onClick: () => void }
   );
 }
 
-const EMPTY_FILTERS: SearchFilterValues = { category: '', dateFrom: '', dateTo: '' };
-
 export function KnowledgeQAApp() {
   const { status, start, stop } = useAgentStream(KNOWLEDGE_QA_CONFIG.endpoint);
   const [lastQuery, setLastQuery] = useState<string | null>(null);
-  const [filters, setFilters] = useState<SearchFilterValues>(EMPTY_FILTERS);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isStreaming = status === StreamStatus.STREAMING;
   const isError = status === StreamStatus.ERROR;
   const hasQueried = lastQuery !== null;
 
-  const activeFilters = Object.fromEntries(
-    Object.entries(filters).filter(([, v]) => v !== '')
-  );
-
   const handleSubmit = useCallback(
     (query: string) => {
       setLastQuery(query);
       setSidebarOpen(false);
-      start(query, activeFilters);
+      start(query, {});
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [start, filters]
+    [start]
   );
 
   const handleRetry = useCallback(() => {
-    if (lastQuery) start(lastQuery, activeFilters);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastQuery, start, filters]);
+    if (lastQuery) start(lastQuery, {});
+  }, [lastQuery, start]);
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -164,9 +154,6 @@ export function KnowledgeQAApp() {
             <SidebarToggle open={sidebarOpen} onClick={() => setSidebarOpen((v) => !v)} />
           </div>
           <QueryInput onSubmit={handleSubmit} disabled={isStreaming} />
-          <div className="mt-3">
-            <SearchFilters filters={filters} onChange={setFilters} disabled={isStreaming} />
-          </div>
         </div>
 
         {/* Scrollable results */}

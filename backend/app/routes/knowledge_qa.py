@@ -50,8 +50,8 @@ async def _stream(
 
     # Message 2: populate with RAG result
     try:
-        answer, sources = await agent.run(query, category, date_from, date_to)
-        yield json.dumps(update_components_msg(answer, sources)) + "\n"
+        answer, sources, usage = await agent.run(query, category, date_from, date_to)
+        yield json.dumps(update_components_msg(answer, sources, usage)) + "\n"
     except Exception as exc:
         logger.error("RAG pipeline error for query=%r: %s", query, exc, exc_info=True)
         yield json.dumps(_error_components(

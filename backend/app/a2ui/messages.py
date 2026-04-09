@@ -23,35 +23,51 @@ def create_surface_msg() -> dict:
     }
 
 
-def update_components_msg(answer: str, sources: list[dict]) -> dict:
+def update_components_msg(answer: str, sources: list[dict], usage: dict | None = None) -> dict:
+    components = [
+        {
+            "id": "answer-label",
+            "component": "Text",
+            "text": "Answer",
+            "usageHint": "h2",
+        },
+        {
+            "id": "answer-body",
+            "component": "Markdown",
+            "markdown": answer,
+        },
+    ]
+
+    if usage:
+        components.append({
+            "id": "meta-info",
+            "component": "Text",
+            "text": (
+                f"Model: {usage['model']} · "
+                f"{usage['total_tokens']:,} tokens "
+                f"({usage['prompt_tokens']:,} in, {usage['completion_tokens']:,} out)"
+            ),
+            "usageHint": "caption",
+        })
+
+    components += [
+        {
+            "id": "sources-label",
+            "component": "Text",
+            "text": "Sources",
+            "usageHint": "h3",
+        },
+        {
+            "id": "sources-list",
+            "component": "SourceList",
+            "sources": sources,
+        },
+    ]
+
     return {
         "version": VERSION,
         "updateComponents": {
             "surfaceId": SURFACE_ID,
-            "components": [
-                {
-                    "id": "answer-label",
-                    "component": "Text",
-                    "text": "Answer",
-                    "usageHint": "h2",
-                },
-                {
-                    "id": "answer-body",
-                    "component": "Text",
-                    "text": answer,
-                    "usageHint": "body",
-                },
-                {
-                    "id": "sources-label",
-                    "component": "Text",
-                    "text": "Sources",
-                    "usageHint": "h3",
-                },
-                {
-                    "id": "sources-list",
-                    "component": "SourceList",
-                    "sources": sources,
-                },
-            ],
+            "components": components,
         },
     }

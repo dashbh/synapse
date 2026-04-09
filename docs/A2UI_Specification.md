@@ -1,168 +1,112 @@
 # A2UI Protocol Specification v0.9
 
-**Last Updated:** April 7, 2026  
-**Scope:** A2UI message format, component types, data binding  
-**Audience:** Frontend + Backend developers
+**Last Updated:** April 9, 2026  
+**Scope:** A2UI message format as implemented in this codebase  
+**Audience:** Backend developers (what to send), Frontend developers (what the processor handles)
+
+> **For the full request/response contract (timing, error handling, curl tests), see [Contracts.md](Contracts.md).**  
+> **For component prop APIs, see [Contracts.md §5](Contracts.md) and [FE_Reference.md](FE_Reference.md).**
 
 ---
 
-## 1. A2UI Protocol Overview
+## 1. Protocol Overview
 
-A2UI is a declarative protocol for describing agent-generated UIs. Three core concepts:
+A2UI is a declarative protocol where the backend describes a UI as a stream of JSON messages. The frontend's `MessageProcessor` (`@a2ui/web_core/v0_9`) receives the messages and builds a surface model that React renders.
 
-1. **Surfaces** — Root UI containers (one per query result)
-2. **Components** — Nodes in the UI tree (Text, Card, Button, etc.)
-3. **Data Model** — Values accessible via JSON Pointer paths
-
-**Message Flow:**
+**Message flow (current implementation):**
 ```
-1. surfaceUpdate → Define structure (components)
-2. dataModelUpdate → Populate data (values)
-3. beginRendering → Signal to render
+1. createSurface    → Register the surface (surfaceId + catalogId)
+2. updateComponents → Set all components with their final prop values
+```
+
+Stream closes after Message 2. The React layer (`A2UISurface`) subscribes to `onSurfaceCreated` and re-renders reactively as the processor model updates.
+
+**All messages share this envelope:**
+```json
+{ "version": "v0.9", "<messageType>": { ... } }
 ```
 
 ---
 
 ## 2. Message Types
 
-### surfaceUpdate Message
+The library (`@a2ui/web_core/v0_9`) supports four message types:
 
-**Purpose:** Define UI component structure
-
-**Structure:**
-```json
-{
-  "surfaceUpdate": {
-    "surfaceId": "string (unique ID)",
-    "components": [
-      {
-        "id": "string (unique within surface)",
-        "component": {
-          "ComponentType": {
-            "prop1": "value or binding",
-            "prop2": "value or binding"
-          }
-        }
-      }
-    ]
-  }
-}
-```
-
-**Example:**
-```json
-{
-  "surfaceUpdate": {
-    "surfaceId": "qa-result",
-    "components": [
-      {
-        "id": "title",
-        "component": {
-          "Text": {
-            "text": { "literalString": "Answer" },
-            "usageHint": "h2"
-          }
-        }
-      },
-      {
-        "id": "content",
-        "component": {
-          "Text": {
-            "text": { "path": "/answer/body" }
-          }
-        }
-      },
-      {
-        "id": "source-list",
-        "component": {
-          "SourceList": {
-            "items": { "path": "/sources" }
-          }
-        }
-      }
-    ]
-  }
-}
-```
-
-**Rules:**
-- `surfaceId` must be unique (don't reuse)
-- `components` array cannot be empty
-- Component `id` must be unique within the surface
-- Component `component` object has exactly one key (the type)
-- Props use data binding syntax (see § 4)
-
----
-
-### dataModelUpdate Message
-
-**Purpose:** Populate data model that components reference
-
-**Structure:**
-```json
-{
-  "dataModelUpdate": {
-    "surfaceId": "string (must match surfaceUpdate)",
-    "contents": [
-      {
-        "key": "string (data model key)",
-        "valueString": "optional string value",
-        "valueFloat": "optional float value",
-        "valueList": "optional array",
-        "valueMap": "optional object"
-      }
-    ]
-  }
-}
-```
-
-**Data Model Value Types:**
-
-| Type | Field | Example |
+| Type | Purpose | Used in v1? |
 |---|---|---|
-| String | `valueString` | `"valueString": "Hello"` |
-| Float | `valueFloat` | `"valueFloat": 0.95` |
-| List | `valueList` | `"valueList": [{...}, {...}]` |
-| Map | `valueMap` | `"valueMap": [{"key": "k", "valueString":...}]` |
+| `createSurface` | Register a surface | ✅ |
+| `updateComponents` | Set component definitions + props | ✅ |
+| `updateDataModel` | Populate a data model (for path bindings) | v2+ |
+| `deleteSurface` | Remove a surface | v2+ |
 
-**List structures:**
-```json
-"valueList": [
-  { "valueString": "item 1" },
-  { "valueString": "item 2" },
-  ...
-]
-```
+---
 
-**Map structures:**
-```json
-"valueMap": [
-  { "key": "title", "valueString": "Source 1" },
-  { "key": "score", "valueFloat": 0.91 },
-  ...
-]
-```
+### createSurface
 
-**Example:**
+Registers a new surface. Must be sent before `updateComponents`.
+
 ```json
 {
-  "dataModelUpdate": {
+  "version": "v0.9",
+  "createSurface": {
     "surfaceId": "qa-result",
-    "contents": [
+    "catalogId": "stub"
+  }
+}
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `surfaceId` | ✅ | Unique ID for this surface (used in all following messages) |
+| `catalogId` | ✅ | Which component catalog to use (`"stub"` for v1) |
+| `theme` | ❌ | Optional theme override |
+| `sendDataModel` | ❌ | If true, FE will send data model back to backend (v2+) |
+
+**Rule:** No `components` field here — components are set in `updateComponents`.
+
+---
+
+### updateComponents
+
+Sets the complete component tree for a surface. Sent after `createSurface`.
+
+```json
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "qa-result",
+    "components": [
       {
-        "key": "answer",
-        "valueMap": [
-          { "key": "body", "valueString": "Machine learning is..." }
-        ]
+        "id": "answer-label",
+        "component": "Text",
+        "text": "Answer",
+        "usageHint": "h2"
       },
       {
-        "key": "sources",
-        "valueList": [
+        "id": "answer-body",
+        "component": "Text",
+        "text": "Machine learning is a subset of AI...",
+        "usageHint": "body"
+      },
+      {
+        "id": "sources-label",
+        "component": "Text",
+        "text": "Sources",
+        "usageHint": "h3"
+      },
+      {
+        "id": "sources-list",
+        "component": "SourceList",
+        "sources": [
           {
-            "valueMap": [
-              { "key": "title", "valueString": "ML Guide" },
-              { "key": "score", "valueFloat": 0.92 }
-            ]
+            "id": "uuid",
+            "title": "ML Guide",
+            "excerpt": "Machine learning is...",
+            "score": 0.92,
+            "document": "ml-guide.pdf",
+            "section": "Chapter 1",
+            "date": "2025-11-15",
+            "category": "AI/ML"
           }
         ]
       }
@@ -171,292 +115,95 @@ A2UI is a declarative protocol for describing agent-generated UIs. Three core co
 }
 ```
 
-**Rules:**
-- `surfaceId` must match corresponding surfaceUpdate
-- At most one `value*` field per entry (not all required, depends on usage)
-- Maps are arrays of key-value pairs (not JSON objects)
-- Lists can contain strings, floats, or maps
+| Field | Required | Description |
+|---|---|---|
+| `surfaceId` | ✅ | Must match the `createSurface` surfaceId |
+| `components` | ✅ | Full component array — replaces any prior state |
 
----
-
-### beginRendering Message
-
-**Purpose:** Signal that surface is ready to render (all data populated)
-
-**Structure:**
+**Component object shape:**
 ```json
 {
-  "beginRendering": {
-    "surfaceId": "string (must match previous messages)",
-    "root": "string (component ID to render from)",
-    "error": "optional string (error message if failed)"
-  }
+  "id": "<unique within surface>",
+  "component": "<ComponentTypeName>",
+  "<prop1>": "<value>",
+  "<prop2>": "<value>"
 }
 ```
 
-**Success example:**
+Props are **flat key-value pairs** at the component level — not nested under the type name.
+
+---
+
+### updateDataModel (v2+)
+
+Populates a data model that components can reference via path bindings. Not used in v1 — current backend sends all values as inline flat props in `updateComponents`.
+
 ```json
 {
-  "beginRendering": {
+  "version": "v0.9",
+  "updateDataModel": {
     "surfaceId": "qa-result",
-    "root": "title"
-  }
-}
-```
-
-**Error example:**
-```json
-{
-  "beginRendering": {
-    "surfaceId": "qa-result",
-    "error": "LLM rate limit exceeded"
-  }
-}
-```
-
-**Rules:**
-- `surfaceId` must match surfaceUpdate + dataModelUpdate
-- `root` is the component ID where rendering begins
-- `error` field optional; if present, FE displays it instead of rendering
-- After this message, stream should close
-
----
-
-## 3. Component Types
-
-### Text Component
-
-**Purpose:** Display text with semantic hint (heading, body, etc.)
-
-**Props:**
-| Prop | Type | Required | Values |
-|---|---|---|---|
-| `text` | binding | ✅ | `{ "literalString": "..." }` or `{ "path": "/key" }` |
-| `usageHint` | string | ❌ | `h1`, `h2`, `h3`, `body`, `caption` |
-
-**Example:**
-```json
-{
-  "Text": {
-    "text": { "literalString": "Welcome" },
-    "usageHint": "h1"
-  }
-}
-```
-
-**Frontend rendering:** Maps to `<h1>`, `<h2>`, `<h3>`, `<p>`, `<p class="caption">` with design tokens
-
----
-
-### Card Component
-
-**Purpose:** Container/box with optional title
-
-**Props:**
-| Prop | Type | Required | Values |
-|---|---|---|---|
-| `title` | binding | ❌ | `{ "literalString": "..." }` or `{ "path": "/key" }` |
-| `children` | array | ❌ | Array of component IDs |
-
-**Example:**
-```json
-{
-  "Card": {
-    "title": { "literalString": "Results" },
-    "children": ["result-1", "result-2"]
-  }
-}
-```
-
-**Frontend rendering:** shadcn Card with CardHeader (if title) + CardContent
-
----
-
-### Button Component
-
-**Purpose:** Interactive button
-
-**Props:**
-| Prop | Type | Required | Values |
-|---|---|---|---|
-| `text` | binding | ✅ | `{ "literalString": "..." }` or `{ "path": "/key" }` |
-| `variant` | string | ❌ | `primary` (default), `secondary`, `success`, `warning`, `error` |
-| `disabled` | boolean | ❌ | `true` / `false` |
-
-**Example:**
-```json
-{
-  "Button": {
-    "text": { "literalString": "Continue" },
-    "variant": "primary",
-    "disabled": false
+    "path": "/answer",
+    "value": "Machine learning is..."
   }
 }
 ```
 
 ---
 
-### Badge Component
+## 3. Component Prop Format
 
-**Purpose:** Small label/status indicator
+All component props are **flat literals** at the component object level:
 
-**Props:**
-| Prop | Type | Required | Values |
-|---|---|---|---|
-| `text` | binding | ✅ | `{ "literalString": "..." }` or `{ "path": "/key" }` |
-| `variant` | string | ❌ | `default`, `success`, `warning`, `error`, `info` |
-
-**Example:**
 ```json
-{
-  "Badge": {
-    "text": { "literalString": "In Progress" },
-    "variant": "primary"
-  }
-}
+{ "id": "my-text", "component": "Text", "text": "Hello", "usageHint": "h2" }
+{ "id": "my-btn",  "component": "Button", "label": "Submit", "variant": "primary" }
+{ "id": "my-list", "component": "SourceList", "sources": [...] }
 ```
+
+**Not** the nested type-keyed format — that was a previous spec that was never implemented:
+```json
+❌ { "id": "x", "component": { "Text": { "text": { "literalString": "Hello" } } } }
+✅ { "id": "x", "component": "Text", "text": "Hello" }
+```
+
+For full prop tables per component type, see [Contracts.md §5](Contracts.md) and [FE_Reference.md](FE_Reference.md).
 
 ---
 
-### SourceList Component
+## 4. Debugging
 
-**Purpose:** Display list of sources/citations with score badges
-
-**Props:**
-| Prop | Type | Required | Values |
-|---|---|---|---|
-| `items` | binding | ✅ | `{ "path": "/sources" }` (must point to array) |
-
-**Data Model Structure (Expected):**
-Each item in `/sources` array must be a map with:
-```json
-{
-  "key": "title",
-  "valueString": "Source Title"
-},
-{
-  "key": "excerpt",
-  "valueString": "Quote or excerpt..."
-},
-{
-  "key": "score",
-  "valueFloat": 0.95
-},
-{
-  "key": "url",
-  "valueString": "https://..."
-}
-```
-
-**Example surfaceUpdate:**
-```json
-{
-  "SourceList": {
-    "items": { "path": "/sources" }
-  }
-}
-```
-
-**Example dataModelUpdate:**
-```json
-{
-  "key": "sources",
-  "valueList": [
-    {
-      "valueMap": [
-        { "key": "title", "valueString": "ML Guide" },
-        { "key": "excerpt", "valueString": "Machine learning is..." },
-        { "key": "score", "valueFloat": 0.91 },
-        { "key": "url", "valueString": "https://docs.example.com/ml" }
-      ]
-    },
-    {
-      "valueMap": [
-        { "key": "title", "valueString": "AI Fundamentals" },
-        { "key": "excerpt", "valueString": "AI is a broad field..." },
-        { "key": "score", "valueFloat": 0.84 },
-        { "key": "url", "valueString": "https://docs.example.com/ai" }
-      ]
-    }
-  ]
-}
-```
-
----
-
-## 4. Data Binding
-
-### Static Values (Literals)
-
-Use `literalString` for fixed text:
-
-```json
-{ "text": { "literalString": "Fixed text" } }
-```
-
-Always renders as: "Fixed text"
-
-### Dynamic Values (Paths)
-
-Use `path` to bind to data model:
-
-```json
-{ "text": { "path": "/answer/body" } }
-```
-
-Resolves to: data model entry with `key="answer"` → map entry with `key="body"` → `valueString`
-
-**Path Syntax:**
-- `/answer` — Top-level data model entry
-- `/answer/body` — Entry + nested key
-- `/sources` — Reference to array
-- `/sources[0]` — Future (v2): array index
-- `/sources[].title` — Future (v2): map all titles from array
-
-**Current Support (v1):** Only `/key` and `/key/nested-key` paths (no array indexing)
-
----
-
-## 5. Error Codes & Debugging
-
-### Common A2UI Errors
+### Common errors
 
 | Error | Likely Cause | Fix |
 |---|---|---|
-| "Unknown component: Foo" | Backend sent component type not in catalog | Check component type spelling |
-| "Path '/answer/text' not found" | Data model missing expected key | Verify dataModelUpdate has all keys referenced in surfaceUpdate |
-| "Component ID 'xyz' not found" (when using child IDs) | Card references child ID that doesn't exist | Check component IDs match |
-| Invalid JSON line | Malformed message | Pretty-print message and validate against schema |
+| "Unknown component: Foo" | Backend sent unregistered component type | Check component name spelling + catalogRegistry |
+| Surface renders empty | `updateComponents` not received / wrong surfaceId | Verify surfaceId matches across both messages |
+| Invalid JSON line | Malformed message | `curl \| jq .` to validate each line |
 
-### Frontend Debug Checklist
+### Checklist
 
-1. ✅ Are all 3 messages present? (Check network tab for 3 lines of JSON)
-2. ✅ Is JSON valid? (Use jq or in-browser console `JSON.parse()`)
-3. ✅ Do topmost messages have matching `surfaceId`?
-4. ✅ Do all `/paths` in surfaceUpdate exist in dataModelUpdate?
-5. ✅ Do component IDs match (no typos)?
-6. ✅ Are value types correct? (strings vs floats vs arrays vs objects)
-
----
-
-## 6. Backward Compatibility
-
-**Current Version:** A2UI v0.9 (locked for v1)
-
-**If adding new component types:**
-- Unknown types: FE logs warning, skips component
-- Supported types: FE renders normally
-
-**If removing required fields:**
-- Breaking change: increment version number
-- Notify all FE/BE teams
-- Support both versions temporarily
+1. Are both messages received? (Network tab → 2 lines of JSON)
+2. Does each message have `version: "v0.9"`?
+3. Does `surfaceId` match across both messages?
+4. Is `createSurface` missing the `components` field? (It should be absent)
+5. Does `updateComponents` have a `components[]` array (not `updates[]`)?
+6. Are component prop names spelled correctly? (`text` not `label` for Text; `sources` not `items` for SourceList)
 
 ---
 
-## 7. References
+## 5. Backward Compatibility
 
-- **Backend Contract:** See [Contracts.md](Contracts.md) for SSE protocol + timing
-- **Frontend Implementation:** See [FE_Implementation.md](FE_Implementation.md)
-- **Component Reference:** See [FE_Reference.md](FE_Reference.md)
-- **Architectural Patterns:** See [Architecture.md](Architecture.md)
+- **Current version:** A2UI v0.9
+- **Import path:** `@a2ui/web_core/v0_9` (NOT the root — that resolves to v0.8)
+- **Unknown component types:** FE logs warning and skips — does not crash
+- **Breaking change:** Removing a required field requires version bump + FE team notification
+
+---
+
+## 6. References
+
+- **Request/response contract + timing:** [Contracts.md](Contracts.md)
+- **Component prop APIs:** [Contracts.md §5](Contracts.md) + [FE_Reference.md](FE_Reference.md)
+- **System architecture:** [Architecture.md](Architecture.md)
+- **Governance rules:** [Governance.md](Governance.md)

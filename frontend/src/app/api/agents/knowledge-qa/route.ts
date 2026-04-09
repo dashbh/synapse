@@ -1,6 +1,41 @@
 import { type NextRequest } from 'next/server';
 
-const CATALOG_ID = 'stub'; // must match the catalog ID registered in MessageProcessorProvider
+// ---------------------------------------------------------------------------
+// When BACKEND_URL is set, proxy to the FastAPI backend.
+// Otherwise fall back to the mock implementation (dev / no-backend mode).
+// ---------------------------------------------------------------------------
+
+const BACKEND_URL = process.env.BACKEND_URL; // e.g. http://localhost:8000
+
+export async function POST(request: NextRequest) {
+  if (BACKEND_URL) {
+    // Proxy: forward the full query string to FastAPI and stream the response.
+    const { searchParams } = new URL(request.url);
+    const targetUrl = `${BACKEND_URL}/api/agents/knowledge-qa?${searchParams.toString()}`;
+
+    const upstream = await fetch(targetUrl, {
+      method: 'POST',
+      signal: request.signal,
+    });
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+  }
+
+  return mockResponse(request);
+}
+
+// ---------------------------------------------------------------------------
+// Mock — used when BACKEND_URL is not configured
+// ---------------------------------------------------------------------------
+
+const CATALOG_ID = 'stub';
 const SURFACE_ID = 'qa-result';
 const DELAY_MS = 350;
 
@@ -12,7 +47,7 @@ function jsonLine(msg: object): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(msg) + '\n');
 }
 
-export async function POST(request: NextRequest) {
+function mockResponse(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('query') ?? '(no query)';
   const category = searchParams.get('category') ?? '';
@@ -29,7 +64,6 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Message 1: Create the surface
         controller.enqueue(
           jsonLine({
             version: 'v0.9',
@@ -42,7 +76,6 @@ export async function POST(request: NextRequest) {
 
         await delay(DELAY_MS);
 
-        // Message 2: Define all components with static data
         controller.enqueue(
           jsonLine({
             version: 'v0.9',

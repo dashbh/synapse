@@ -42,14 +42,9 @@ body: text-base font-normal leading-relaxed text-gray-700
 caption: text-sm font-normal leading-snug text-gray-500
 ```
 
-**Usage in A2UI:**
+**Usage in A2UI (`updateComponents.components[]`):**
 ```json
-{
-  "Text": {
-    "text": { "literalString": "Welcome" },
-    "usageHint": "h1"
-  }
-}
+{ "id": "heading", "component": "Text", "text": "Welcome", "usageHint": "h1" }
 ```
 
 ---
@@ -90,14 +85,9 @@ CardHeader: py-4 px-6 border-b
 CardContent: py-4 px-6
 ```
 
-**Usage in A2UI:**
+**Usage in A2UI (`updateComponents.components[]`):**
 ```json
-{
-  "Card": {
-    "title": { "literalString": "Results" },
-    "childIds": ["child-1", "child-2"]
-  }
-}
+{ "id": "my-card", "component": "Card", "title": "Results", "childIds": ["child-1", "child-2"] }
 ```
 
 ---
@@ -111,39 +101,27 @@ CardContent: py-4 px-6
 **Props:**
 ```typescript
 interface ButtonComponentProps {
-  text: unknown;              // Button label
-  variant?: unknown;          // 'primary' | 'secondary' | 'success' | 'warning' | 'error'
-  disabled?: unknown;         // boolean
-  onClick?: () => void;       // (Optional, v2+)
+  label: unknown;       // Button label text
+  variant?: unknown;    // 'secondary' | anything else (renders as primary)
+  onClick?: () => void; // (v2+)
 }
 ```
 
 **Variant Mapping:**
 ```
-primary (default)   → Blue (token.colors.primary)
-secondary           → Outlined grey
-success             → Green (token.colors.success)
-warning             → Orange (token.colors.warning)
-error               → Red (token.colors.error)
+(any except "secondary") → Gradient blue (primary style)
+"secondary"              → Outlined grey
 ```
 
 **Design Tokens:**
 ```
-Primary: bg-blue-500 text-white rounded-md px-4 py-2
-Secondary: border-1 border-gray-300 text-gray-700
-Success: bg-emerald-500 text-white
-Warning: bg-amber-500 text-white
-Error: bg-red-500 text-white
+Primary: gradient from-primary-600 to-primary-500 text-white rounded-xl shadow-sm
+Secondary: border border-neutral-200 bg-white text-neutral-700
 ```
 
-**Usage in A2UI:**
+**Usage in A2UI (`updateComponents.components[]`):**
 ```json
-{
-  "Button": {
-    "text": { "literalString": "Submit" },
-    "variant": "primary"
-  }
-}
+{ "id": "submit-btn", "component": "Button", "label": "Submit", "variant": "secondary" }
 ```
 
 ---
@@ -157,36 +135,27 @@ Error: bg-red-500 text-white
 **Props:**
 ```typescript
 interface BadgeComponentProps {
-  text: unknown;         // Badge label
-  variant?: unknown;     // 'default' | 'success' | 'warning' | 'error' | 'info'
+  label: unknown;    // Badge label text
+  variant?: unknown; // 'default' | 'secondary' | 'destructive' | 'outline'
 }
 ```
 
 **Variant Mapping:**
 ```
-default   → Grey background
-success   → Green background
-warning   → Orange background
-error     → Red background
-info      → Blue background
+default     → Blue-tinted (primary-50 bg, primary-700 text)
+secondary   → Violet-tinted (secondary-50 bg, secondary-700 text)
+destructive → Red-tinted (error-50 bg, error-700 text)
+outline     → Transparent bg, neutral ring
 ```
 
 **Design Tokens:**
 ```
-Small text (0.875rem, font-semibold)
-Rounded corners (rounded-full)
-Padding: px-3 py-1
-Color applied by variant
+11px font-semibold, rounded-full, px-2.5 py-0.5
 ```
 
-**Usage in A2UI:**
+**Usage in A2UI (`updateComponents.components[]`):**
 ```json
-{
-  "Badge": {
-    "text": { "literalString": "Score: 0.92" },
-    "variant": "success"
-  }
-}
+{ "id": "status", "component": "Badge", "label": "Score: 92%", "variant": "default" }
 ```
 
 ---
@@ -200,62 +169,44 @@ Color applied by variant
 **Props:**
 ```typescript
 interface SourceListComponentProps {
-  items: unknown;          // Data binding to /sources array
-  renderChild?: (id: string) => ReactElement | null;
+  sources: unknown; // Array of source objects (see shape below)
 }
 ```
 
-**Renders:**
-```
-<div className="grid gap-4 grid-cols-1">
-  {items.map(item => (
-    <Card>
-      <h4>{item.title}</h4>
-      <p className="text-sm">{item.excerpt}</p>
-      <div className="flex items-center gap-2 mt-2">
-        <Badge variant={scoreToVariant(item.score)}>
-          {(item.score * 100).toFixed(0)}%
-        </Badge>
-        <a href={item.url} className="text-blue-500 underline">
-          View source
-        </a>
-      </div>
-    </Card>
-  ))}
-</div>
+**Source object shape** (all fields optional, populate as many as available):
+```typescript
+{
+  id?:       string;  // Chunk UUID
+  title?:    string;  // Document title or filename
+  excerpt?:  string;  // Content snippet (~400 chars)
+  score?:    number;  // Cosine similarity 0–1 (shown as %)
+  document?: string;  // Source filename (e.g. "api-guide.pdf")
+  section?:  string;  // Document section/heading
+  date?:     string;  // Upload date YYYY-MM-DD
+  category?: string;  // User-defined category
+  url?:      string;  // Optional link shown in side panel
+}
 ```
 
-**Score Interpretation:**
-```
-score >= 0.9   → Green (success)
-score >= 0.8   → Blue (info)
-score >= 0.7   → Orange (warning)
-score < 0.7    → Red (error)
-```
+**Renders:** List of source cards. Clicking "Preview" opens a side panel with full metadata (`document`, `section`, `date`, `category`, `excerpt`, `url`).
 
-**Expected Data Model Structure:**
+**Usage in A2UI (`updateComponents.components[]`):**
 ```json
 {
-  "key": "sources",
-  "valueList": [
+  "id": "sources-list",
+  "component": "SourceList",
+  "sources": [
     {
-      "valueMap": [
-        { "key": "title", "valueString": "..." },
-        { "key": "excerpt", "valueString": "..." },
-        { "key": "score", "valueFloat": 0.92 },
-        { "key": "url", "valueString": "https://..." }
-      ]
+      "id": "uuid",
+      "title": "ML Guide",
+      "excerpt": "Machine learning is...",
+      "score": 0.92,
+      "document": "ml-guide.pdf",
+      "section": "Chapter 1",
+      "date": "2025-11-15",
+      "category": "AI/ML"
     }
   ]
-}
-```
-
-**Usage in A2UI:**
-```json
-{
-  "SourceList": {
-    "items": { "path": "/sources" }
-  }
 }
 ```
 

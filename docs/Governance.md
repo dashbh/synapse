@@ -99,7 +99,7 @@ src/apps/ ← can import from both above
 
 - ❌ No authentication / authorization (v1)
 - ❌ No user accounts / persistence (v1)
-- ❌ No database schemas (v1 — mock data only)
+- ❌ No real authentication / user accounts (v1 — mock token only)
 - ❌ No over-engineering (follow YAGNI principle)
 - ❌ No client-side secrets (never leak API keys to browser)
 - ❌ No polling or WebSocket overhead (SSE only)
@@ -126,7 +126,7 @@ src/apps/ ← can import from both above
 1. **User → App:** App captures user input (e.g., query text)
 2. **App → Transport:** App calls `useAgentStream.start(query)` with endpoint
 3. **Transport → Backend (SSE):** Opens stream, receives JSONL messages
-4. **Backend → Transport (SSE):** Sends 3-message sequence (surfaceUpdate → dataModelUpdate → beginRendering)
+4. **Backend → Transport (SSE):** Sends 2-message sequence (`createSurface` → `updateComponents`)
 5. **Transport → MessageProcessor:** Each message fed via `processor.processMessages()`
 6. **MessageProcessor → React State:** Surfaces/components render via SurfaceView + ComponentHost
 7. **React → User:** UI displayed in browser
@@ -160,7 +160,7 @@ src/apps/ ← can import from both above
 
 - ✅ Each file has single responsibility (documented at top)
 - ✅ Architecture rules here (this file)
-- ✅ Tech stack decisions in FE_Implementation.md
+- ✅ Tech stack decisions in Architecture.md §3
 - ✅ How-to guides in FE_Patterns.md
 - ✅ Reference (components, tokens) in FE_Reference.md
 - ✅ Protocol details in A2UI_Specification.md
@@ -192,9 +192,9 @@ src/apps/ ← can import from both above
 
 ### Adding a New Endpoint (Backend)
 1. Follow Contracts.md SSE spec exactly
-2. Stream 3-message A2UI v0.9 sequence
-3. Test with curl (template in Contracts.md)
-4. Update docs/BE_Implementation.md when BE created
+2. Stream 2-message A2UI v0.9 sequence (`createSurface` → `updateComponents`)
+3. Test with curl (template in Contracts.md §7)
+4. Add route in `backend/app/routes/` following `knowledge_qa.py` pattern
 
 ---
 
@@ -279,7 +279,7 @@ src/apps/ ← can import from both above
 ---
 
 **For implementation details, see:**
-- [FE_Implementation.md](FE_Implementation.md) — Frontend setup & tech stack
 - [FE_Reference.md](FE_Reference.md) — Component & token APIs
 - [FE_Patterns.md](FE_Patterns.md) — How-to guides
-- [Architecture.md](Architecture.md) — System design concepts
+- [Architecture.md](Architecture.md) — System design + backend layout
+- [Contracts.md](Contracts.md) — SSE protocol contract

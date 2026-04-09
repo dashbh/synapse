@@ -25,20 +25,22 @@
 └─────────────────────────────────────────────────────────────────┘
          │
          │ SSE (Server-Sent Events)
-         │ POST /api/agents/knowledge-qa
-         │ Content-Type: text/stream
-         │ A2UI JSONL (surfaceUpdate, dataModelUpdate, beginRendering)
+         │ POST /api/agents/knowledge-qa?query=...
+         │ Content-Type: text/plain; charset=utf-8
+         │ A2UI JSONL (createSurface, updateComponents)
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    BACKEND (Python FastAPI)  [v2]               │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ POST /query                                            │   │
-│  │  1. Validate query + extract intent                   │   │
-│  │  2. LangChain: retrieve document chunks (Supabase pgvector) │
-│  │  3. LLM: generate A2UI surface                 │   │
-│  │  4. Stream A2UI JSONL messages (surfaceUpdate → dataModel → beginRendering)  │   │
-│  │  5. Close SSE stream                                 │   │
+│  │ POST /api/agents/knowledge-qa?query=...               │   │
+│  │  1. Validate query + read filter params               │   │
+│  │  2. Stream Message 1: createSurface                   │   │
+│  │  3. OpenAI: embed query (text-embedding-ada-002)      │   │
+│  │  4. Supabase pgvector: similarity search              │   │
+│  │  5. Claude: generate answer from context              │   │
+│  │  6. Stream Message 2: updateComponents                │   │
+│  │  7. Close SSE stream                                  │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
          │
@@ -96,7 +98,7 @@ App Root (Next.js)
 | Layer | State Owner | Scope |
 |---|---|---|
 | **Platform** | `platformStore` (Zustand) | Current active app, global UI state |
-| **A2UI Surface** | `MessageProcessor` (@a2ui/web-lib) | Component definitions, data bindings, rendering tree |
+| **A2UI Surface** | `MessageProcessor` (@a2ui/web_core/v0_9) | Component definitions, data bindings, rendering tree |
 | **App** | Component local state (React hooks) | Query input, form state, validation |
 | **HTTP** | None (SSE streaming only) | No polling, no persistent connection mgmt |
 
@@ -112,19 +114,17 @@ App Root (Next.js)
    ├─ useAgentStream.start(query)
    └─ Set status → STREAMING
    ↓
-3. useAgentStream opens SSE (EventSource)
+3. useAgentStream opens stream (fetch POST + ReadableStream)
    └─ Connects to: POST /api/agents/knowledge-qa?query=...
    ↓
 4. MessageProcessor receives messages (in order):
    │
-   ├─ Message 1: surfaceUpdate
-   │  └─ Defines: [answer-label, answer-body, sources-label, sources-list]
+   ├─ Message 1: createSurface
+   │  └─ Registers: surfaceId="qa-result", catalogId="stub"
    │
-   ├─ Message 2: dataModelUpdate
-   │  └─ Populates: /answer/text = "...", /sources[0..n] = [...]
-   │
-   └─ Message 3: beginRendering
-      └─ Signals: root = "answer-label", now render
+   └─ Message 2: updateComponents
+      └─ Defines: [answer-label, answer-body, sources-label, sources-list]
+         with final answer text + source objects
    ↓
 5. A2UISurface re-renders from processor state
    ├─ ComponentHost resolves types to React components
@@ -207,9 +207,8 @@ A2UI Protocol Message (JSONL)
 useAgentStream (SSE transporter)
   ↓
 MessageProcessor (@a2ui/web_core/v0_9)
-  ├─ Parse surfaceUpdate → creates surface model
-  ├─ Parse dataModelUpdate → populates data bindings
-  └─ Parse beginRendering → signals ready
+  ├─ Parse createSurface → creates surface model
+  └─ Parse updateComponents → sets component definitions + props
   ↓
 A2UISurface (React component)
   └─ Subscribes to MessageProcessor events
@@ -249,7 +248,7 @@ useAgentStream hook (uses useSSE):
 **Resource Management:**
 - Explicit `.abort()` on route change (prevent leaks)
 - Single connection per query (no pooling)
-- Auto-close after `beginRendering` message
+- Auto-close after stream ends (FE reads until `done` signal from ReadableStream)
 
 ### Design System Integration
 
@@ -281,36 +280,55 @@ Rendered HTML with design token styling
 
 ---
 
-## 3. Backend Architecture (v2 — Implementation Guide)
+## 3. Backend Architecture (v1 — Implemented)
 
-### Request/Response Contract (v0.1)
+### Request/Response Contract
 
 ```
-POST /api/agents/knowledge-qa?query=<string>
-Content-Type: application/x-www-form-urlencoded
+POST /api/agents/knowledge-qa?query=<string>[&category=...][&dateFrom=...][&dateTo=...]
 
 Response:
-Content-Type: text/event-stream
-Transfer-Encoding: chunked
+Content-Type: text/plain; charset=utf-8
+Cache-Control: no-cache, no-store
 
-Message 1: {"surfaceUpdate": {...}}
-Message 2: {"dataModelUpdate": {...}}
-Message 3: {"beginRendering": {...}}
+Message 1: {"version":"v0.9","createSurface":{"surfaceId":"qa-result","catalogId":"stub"}}
+Message 2: {"version":"v0.9","updateComponents":{"surfaceId":"qa-result","components":[...]}}
 
-Connection closes after beginRendering
+Stream closes after Message 2.
 ```
 
-**Full spec:** See [Contracts.md](Contracts.md) § 1-12.
+**Full spec:** See [Contracts.md](Contracts.md) § 1-9.
 
-### Python Service Stack (v2 Sprint Only)
+### Python Service Stack
 
-- **Framework:** FastAPI
-- **Agent Orchestration:** LangChain / LangGraph
-- **LLM:** Claude via Anthropic SDK
-- **Vector Store:** Supabase pgvector
-- **Validation:** jsonschema against A2UI v0.8 spec
+- **Framework:** FastAPI + uvicorn
+- **Embedding:** OpenAI `text-embedding-ada-002` (1536-dim)
+- **Vector Store:** Supabase pgvector (`match_document_chunks` RPC)
+- **LLM:** Claude (`claude-sonnet-4-6`) via Anthropic SDK
+- **Proxy:** Next.js route handler proxies to FastAPI when `BACKEND_URL` is set
 
-**Not in v1 scope.** FE works with mock SSE handler in Next.js Route Handler.
+### Integration: Next.js → FastAPI
+
+```
+Browser → POST /api/agents/knowledge-qa?...
+           ↓ (Next.js route handler)
+           If BACKEND_URL set: proxy to FastAPI (localhost:8000)
+           Else: mock response (dev/no-backend mode)
+```
+
+### Project Layout
+
+```
+backend/
+├── main.py                      FastAPI app + CORS
+├── requirements.txt
+├── app/
+│   ├── config.py                Env var loading
+│   ├── a2ui/messages.py         A2UI v0.9 message builders
+│   └── routes/knowledge_qa.py   POST /api/agents/knowledge-qa
+└── agents/
+    └── knowledge_qa_agent.py    Embed → Supabase search → Claude → sources
+```
 
 ---
 
@@ -345,20 +363,21 @@ services:
 
 ## 5. Communication Contracts
 
-### FE → BE (v1: Mock Handler, v2: FastAPI Proxy)
+### FE → BE (v1: FastAPI with mock fallback)
 
-**Input:**
+**Input (URL query params):**
 - `query` (string, required)
-- `cursor` (string, optional — for pagination, v2+)
+- `category` (string, optional)
+- `dateFrom` (string, optional, YYYY-MM-DD)
+- `dateTo` (string, optional, YYYY-MM-DD)
 
 **Output (Streaming JSONL):**
 ```
-Line 1: surfaceUpdate
-Line 2: dataModelUpdate
-Line 3: beginRendering
+Line 1: createSurface
+Line 2: updateComponents
 ```
 
-### A2UI Message Schema (v0.8)
+### A2UI Message Schema (v0.9)
 
 See [A2UI_Specification.md](A2UI_Specification.md) § A2UI v0.9 Message Reference.
 
@@ -408,9 +427,9 @@ All shadcn overrides + Tailwind config driven from this single file.
 | Concern | Owner | Responsibility |
 |---|---|---|
 | User intent (query) | Frontend | Capture + validate |
-| Agent logic (RAG, LLM) | Backend (v2) | Generate A2UI surface |
+| Agent logic (RAG, LLM) | Backend | Generate A2UI surface |
 | A2UI protocol compliance | Backend | Stream valid JSONL |
-| Message transport (SSE) | Frontend | Open/close EventSource, handle errors |
+| Message transport (SSE) | Frontend | Open/close stream via fetch, handle errors |
 | State management (MessageProcessor) | Frontend | Receive messages, update internal state |
 | UI rendering (React) | Frontend | Map A2UI → React components + tokens |
 | Design system (tokens) | Frontend | Define + apply consistently |
@@ -421,38 +440,24 @@ All shadcn overrides + Tailwind config driven from this single file.
 
 ## 8. Error Handling
 
-### FE Error Cases
-
-| Case | Handler | User Sees |
-|---|---|---|
-| Network error | `useAgentStream.error` | "Connection failed. Retry?" |
-| SSE timeout (30s+) | Status → ERROR | Spinner → error message |
-| Invalid A2UI message | `catch` in MessageProcessor | "Render failed. Retry?" |
-| Unknown component type | ComponentHost fallback | "Unknown component: Type" |
-
-### BE Error Cases (v2)
-
-| Case | Response |
-|---|---|
-| Query validation fails | HTTP 400 + error message |
-| RAG retrieval fails | HTTP 500 + error log |
-| LLM timeout | SSE error message (non-standard) |
-| Invalid A2UI generation | HTTP 500 + validation error |
+See [Contracts.md §6](Contracts.md) for backend error shapes and [Governance.md §Error Handling Rules](Governance.md) for FE rules.
 
 ---
 
 ## 9. Next-Session Checkpoints
 
-- [ ] **T1 Execution:** Scaffold frontend/src/ + frontend/app/ structure
-- [ ] **v2 Planning:** Backend service skeleton (FastAPI + LangChain)
-- [ ] **v2 Planning:** Infra (docker-compose, Terraform)
-- [ ] **Design Tokens v1:** Define colors, typography, spacing constants
-- [ ] **Catalog v1:** Implement all 5 catalog components (Text, Card, Button, Badge, SourceList)
+- [x] **FE v1:** Frontend scaffold, catalog components, A2UI rendering layer — complete
+- [x] **BE v1:** FastAPI backend, RAG agent (OpenAI embeddings + Claude + Supabase pgvector) — complete
+- [ ] **DB Setup:** Run Supabase SQL (pgvector extension, `document_chunks` table, `match_document_chunks` RPC) — see `backend/README.md`
+- [ ] **Infra:** docker-compose for local full-stack dev (frontend + backend + postgres)
+- [ ] **Ingest v2:** Real document ingestion pipeline (`/api/agents/ingest` endpoint)
+- [ ] **Auth v2:** Replace mock bearer token gate with real OAuth/SAML
 
-**Questions to answer before BE work:**
-- What RAG backend? (Supabase pgvector vs Pinecone vs Milvus?)
-- What LLM? (Claude vs GPT-4 vs Llama?)
-- What LangChain orchestrator? (LangGraph vs native chains?)
+**Decided:**
+- RAG backend: Supabase pgvector
+- LLM: Claude (`claude-sonnet-4-6`) via Anthropic SDK
+- Embeddings: OpenAI `text-embedding-ada-002`
+- Orchestration: Direct SDK calls (no LangChain)
 
 ---
 

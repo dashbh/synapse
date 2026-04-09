@@ -298,7 +298,7 @@ All v1.0 and v1.5 requirements are complete. No open deviations.
 | Item | Status |
 |---|---|
 | **FE Architecture** | Platform Shell loads without app-specific imports ✓ |
-| **A2UI Protocol** | MessageProcessor receives 3-message sequence ✓ |
+| **A2UI Protocol** | MessageProcessor receives 2-message sequence (`createSurface` → `updateComponents`) ✓ |
 | **SSE Transport** | Stream closes explicitly on route change ✓ |
 | **Session Cleanup** | App switch clears all surfaces + state ✓ |
 | **Components** | All 6 catalog components render from A2UI ✓ |

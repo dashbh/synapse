@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 
 interface QueryInputProps {
+  value: string;
+  onChange: (value: string) => void;
   onSubmit: (query: string) => void;
   disabled?: boolean;
 }
 
-export function QueryInput({ onSubmit, disabled = false }: QueryInputProps) {
-  const [value, setValue] = useState('');
-
+export function QueryInput({ value, onChange, onSubmit, disabled = false }: QueryInputProps) {
   const handleSubmit = useCallback(() => {
     const query = value.trim();
     if (!query || disabled) return;
@@ -30,7 +30,7 @@ export function QueryInput({ onSubmit, disabled = false }: QueryInputProps) {
     <div className="relative">
       <textarea
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={disabled}
         placeholder="Ask anything about your knowledge base…"

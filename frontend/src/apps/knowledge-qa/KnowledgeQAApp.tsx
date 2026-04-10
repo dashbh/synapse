@@ -35,7 +35,7 @@ function KnowledgeStats() {
 const SUGGESTED_QUESTIONS = [
   'Summarize the latest architecture decisions',
   'How does the A2UI protocol handle streaming?',
-  'What LLM models does this platform support?',
+  'What documents have been ingested into the knowledge base?',
 ];
 
 function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
@@ -104,6 +104,7 @@ function SidebarToggle({ open, onClick }: { open: boolean; onClick: () => void }
 export function KnowledgeQAApp() {
   const { status, start, stop } = useAgentStream(KNOWLEDGE_QA_CONFIG.endpoint);
   const [lastQuery, setLastQuery] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isStreaming = status === StreamStatus.STREAMING;
@@ -117,6 +118,14 @@ export function KnowledgeQAApp() {
       start(query, {});
     },
     [start]
+  );
+
+  const handlePillSelect = useCallback(
+    (q: string) => {
+      setInputValue(q);
+      handleSubmit(q);
+    },
+    [handleSubmit]
   );
 
   const handleRetry = useCallback(() => {
@@ -153,7 +162,12 @@ export function KnowledgeQAApp() {
           <div className="flex items-center gap-3 mb-4">
             <SidebarToggle open={sidebarOpen} onClick={() => setSidebarOpen((v) => !v)} />
           </div>
-          <QueryInput onSubmit={handleSubmit} disabled={isStreaming} />
+          <QueryInput
+            value={inputValue}
+            onChange={setInputValue}
+            onSubmit={handleSubmit}
+            disabled={isStreaming}
+          />
         </div>
 
         {/* Scrollable results */}
@@ -184,9 +198,17 @@ export function KnowledgeQAApp() {
             </div>
           )}
           {!hasQueried ? (
-            <EmptyState onSelect={handleSubmit} />
+            <EmptyState onSelect={handlePillSelect} />
           ) : (
-            <A2UISurface loading={isStreaming} />
+            <>
+              {lastQuery && (
+                <p className="text-xs text-[var(--color-neutral-400)] mb-4 truncate">
+                  <span className="font-medium text-[var(--color-neutral-500)]">Q:</span>{' '}
+                  {lastQuery}
+                </p>
+              )}
+              <A2UISurface loading={isStreaming} />
+            </>
           )}
         </div>
       </div>

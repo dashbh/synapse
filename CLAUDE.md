@@ -114,6 +114,7 @@ Choose **one** layer/role below:
 3. **Cross-references, not duplication** — Docs link to each other
 4. **Session notes in README** — Track progress where you work
 5. **Governance is everywhere** — Check `docs/Governance.md` before coding
+6. **Docs stay current** — When a new feature is implemented, update the relevant section in `docs/` immediately (same PR/session). New FE components → `Architecture.md` catalog list + `Product_Requirements.md` table. New BE capabilities → `Product_Requirements.md` BE table + `Architecture.md` data-flow. Infrastructure changes → `Architecture.md` §4 + `Product_Requirements.md` Infra table.
 
 ---
 

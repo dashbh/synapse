@@ -1,4 +1,5 @@
 export { TextComponent } from './components/TextComponent';
+export { MarkdownComponent } from './components/MarkdownComponent';
 export { CardComponent } from './components/CardComponent';
 export { ButtonComponent } from './components/ButtonComponent';
 export { BadgeComponent } from './components/BadgeComponent';

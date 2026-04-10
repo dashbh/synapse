@@ -153,57 +153,61 @@ Synapse provides a unified platform shell that orchestrates multiple AI "intelli
 
 ### 6.1 Component Architecture
 
-Synapse uses a unified component catalog for rendering:
-- **TextComponent** — Headings, paragraphs, captions
+Synapse uses a unified A2UI component catalog for rendering (7 types):
+- **TextComponent** — Headings, paragraphs, captions (usageHint: h1/h2/h3/body/caption)
 - **CardComponent** — Containers for grouped content
 - **ButtonComponent** — User interactions
 - **BadgeComponent** — Status and metadata display
-- **SourceListComponent** — Citation references with relevance scores
+- **MarkdownComponent** — Markdown body rendering (react-markdown + GFM; inline `[N]` citation badges)
+- **SourceListComponent** — Compact citation strip; registers sources in registry for the Drawer
+- **MetadataCard** — Document, Section, Date, Category grid
+
+Supporting UI components (not A2UI types):
+- **ConfidenceBadge** — Color-coded confidence tier (Strong/Good/Relevant/Partial) with segment bar
 
 **For component APIs and design tokens, see [FE_Reference.md](FE_Reference.md).**
 
 ### 6.2 Knowledge-QA UX
 
 **Query Input:**
-- Search box with keyboard shortcut (⌘↵)
-- Placeholder text: "Ask about your knowledge base..."
-- Character count limit (optional)
+- Controlled textarea with keyboard shortcut (⌘↵)
+- Command Palette triggered via ⌘K — actions: Upload, View Sources, New Query
 
-**Stream Status.**
-- 4 states: IDLE, STREAMING, DONE, ERROR
-- Visual progress (spinner on STREAMING)
-- Success/error messaging
+**Thinking Indicator (replaces static spinner):**
+- Gemini-style conic-gradient spinning ring
+- Process log sequences: Embedding query → Searching vectors → Synthesizing context → Generating response
+- Appears below query input while streaming; disappears on completion
 
 **Results Display:**
-- Citeable content with reference links
-- Side panel for source preview
-- Related suggestions (if available)
-- Refinement options (filter by category, date range)
+- Answer rendered as Markdown with inline `[N]` citation badges (clicking opens Drawer → Sources tab)
+- Model + token usage caption (e.g. `Model: gpt-4o-mini · 234 tokens (180 in, 54 out)`)
+- Last query shown above answer: `Q: <question>`
 
-**Loading States:**
-- Skeleton loader during ingestion
-- Progress bar for long operations
-- Graceful error display with retry button
+**Document Drawer (right-side panel):**
+- Persistent icon in header badges count of successfully ingested documents
+- Two tabs: **Documents** (upload + ingestion progress) | **Sources** (source cards with confidence)
+- Source cards: title, category, excerpt, ConfidenceBadge, metadata, URL
+- Citation click scrolls to and highlights the matching source card
+
+**Drag-and-Drop Overlay:**
+- Full-viewport overlay activates when any file is dragged over the window
+- On drop: opens Drawer (Documents tab) and starts ingestion automatically
 
 ### 6.3 Ingestion UI (Admin)
 
-**Upload Interface:**
-- Drag-and-drop file upload
-- Browse file picker
-- Show supported formats (PDF, DOCX, markdown, TXT)
-- Multiple file selection
+**Upload Interface (inside Document Drawer):**
+- Full-screen drag-and-drop overlay (global — not confined to the panel)
+- Browse file picker fallback
+- Supported formats: PDF, DOCX, MD, TXT
 
 **Progress Display:**
-- Multi-step progress: Parsing → Chunking → Embedding → Complete
-- Percentage/file count
-- Time elapsed, estimated time remaining
-- Cancel button
+- Multi-step vertical stepper: Upload → Parsing → Chunking → Embedding → Storing
+- Step icons (Lucide), color-coded states (idle / in_progress / done / error)
+- Progress bar with percentage inside the drawer
 
-**Results Summary:**
-- Total documents ingested
-- Total chunks created
-- Any errors or warnings
-- Option to view ingestion log
+**On Completion:**
+- Success banner + "Upload another" link
+- Document count badge in header increments
 
 ---
 
@@ -225,11 +229,17 @@ Synapse uses a unified component catalog for rendering:
 - ✅ Knowledge-QA app (semantic search + ingestion UI)
 - ✅ A2UI v0.9 protocol integration
 - ✅ SSE streaming (Message→React)
-- ✅ Design system + catalog components (6 types: Text, Card, Button, Badge, SourceList, MetadataCard)
+- ✅ Design system + catalog components (7 types: Text, Card, Button, Badge, SourceList, MetadataCard, Markdown)
 - ✅ SSE explicit close on route change; volatile session reset on app nav
 - ✅ Ingestion UI — real-time step progress (Upload → Parsing → Chunking → Embedding → Storing)
-- ✅ Rich citations side panel with source preview and metadata display
-- ✅ Semantic search filter panel (category + date range)
+- ✅ Right-side Document Drawer (Documents + Sources tabs; replaces left sidebar)
+- ✅ Inline `[N]` citation badges in Markdown answers → open Drawer Sources tab
+- ✅ ConfidenceBadge — color-coded strength tiers (Strong/Good/Relevant/Partial) with segment bar
+- ✅ Gemini-style ThinkingIndicator with process log (replaces static spinner)
+- ✅ Drag-and-drop full-viewport overlay → auto-opens Drawer and starts ingestion
+- ✅ Command Palette (⌘K) — upload, view sources, new query
+- ✅ Model name + token usage displayed after each answer
+- ✅ Semantic search filters removed (superseded by inline citation navigation)
 
 **Backend**
 - ✅ FastAPI scaffold (CORS, routing, health endpoint with dependency checks)
@@ -295,19 +305,24 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **C2** | A2UI v0.9 protocol | ✅ Done | MessageProcessor validates and renders |
 | **C3** | SSE streaming | ✅ Done | `useAgentStream` → `useSSE` POST streaming |
 | **C4** | React + Tailwind + shadcn/ui stack | ✅ Done | Design tokens mapped correctly |
-| **C5** | Knowledge-QA query interface | ✅ Done | QueryInput + SearchFilters + StreamStatusBar |
-| **C6** | Catalog components (6 types) | ✅ Done | Text, Card, Button, Badge, SourceList, MetadataCard |
+| **C5** | Knowledge-QA query interface | ✅ Done | Controlled `QueryInput` + `ThinkingIndicator`; search filters removed |
+| **C6** | Catalog components (7 types) | ✅ Done | Text, Card, Button, Badge, SourceList, MetadataCard, Markdown |
 | **C7** | SOLID principles enforcement | ✅ Done | Layer boundaries strictly enforced |
 | **C8** | Graceful stream interruption | ✅ Done | Error boundary + retry UI |
 | **C9** | TypeScript strict mode | ✅ Done | No `any`, all A2UI types validated |
 | **C10** | SSE explicit close on route change | ✅ Done | `useSSE` abort cleanup on unmount |
 | **C11** | Volatile session reset | ✅ Done | Surfaces cleared in `useAgentStream` unmount |
-| **C12** | Ingestion status UI | ✅ Done | Real-time Parsing → Chunking → Embedding steps |
+| **C12** | Ingestion status UI | ✅ Done | Real-time Parsing → Chunking → Embedding steps in Document Drawer |
 | **C13** | SSE-based `/ingest` endpoint | ✅ Done | Real pipeline: upload→parse→chunk→embed→store |
-| **C14** | Rich citations side panel | ✅ Done | Click-to-preview drawer in `SourceListComponent` |
-| **C15** | Citation metadata display | ✅ Done | `MetadataCard` — Document, Section, Date, Category |
-| **C16** | Semantic search filters | ✅ Done | Category + date range wired to query URL params |
+| **C14** | Inline citation badges | ✅ Done | `[N]` in Markdown → clickable badge → opens Drawer Sources tab |
+| **C15** | Citation metadata display | ✅ Done | Source cards in Drawer — Document, Section, Date, Category, excerpt |
+| **C16** | Semantic search filters | ✅ Removed | Replaced by inline citation navigation; URL params dropped |
 | **C17** | Admin auth gate for ingestion | ✅ Done | Bypassed in v1; real OAuth deferred to v2 |
+| **C18** | Document Drawer (right panel) | ✅ Done | `DocumentDrawer` — Documents + Sources tabs; slides in from right |
+| **C19** | Command Palette | ✅ Done | `CommandPalette` (⌘K) — upload, view sources, new query |
+| **C20** | Drag-and-drop overlay | ✅ Done | `DragDropOverlay` — full-viewport; auto-opens Drawer + starts ingestion |
+| **C21** | Thinking indicator | ✅ Done | `ThinkingIndicator` — conic-gradient spinner + sequenced process log |
+| **C22** | Confidence scoring UI | ✅ Done | `ConfidenceBadge` — Strong/Good/Relevant/Partial tiers with segment bar |
 
 ### 🟢 Backend — Complete
 
@@ -317,7 +332,7 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **B2** | `POST /api/agents/knowledge-qa` | ✅ Done | `routes/knowledge_qa.py` — query validation, SSE StreamingResponse |
 | **B3** | `POST /api/agents/ingest` | ✅ Done | `routes/ingest.py` + `agents/ingest_agent.py` — PDF/DOCX/TXT/MD pipeline |
 | **B4** | A2UI v0.9 message builders | ✅ Done | `app/a2ui/messages.py` — `createSurface` + `updateComponents` |
-| **B5** | RAG pipeline | ✅ Done | `agents/knowledge_qa_agent.py` — embed → pgvector → `gpt-4o-mini` |
+| **B5** | RAG pipeline | ✅ Done | `agents/knowledge_qa_agent.py` — embed → pgvector → `gpt-4o-mini`; returns model name + token usage shown in UI |
 | **B6** | Similarity threshold filter | ✅ Done | Chunks below `MIN_SIMILARITY=0.78` discarded; empty sources returned cleanly |
 | **B7** | Deduplication on re-upload | ✅ Done | Existing chunks for same `source_file` deleted before insert |
 | **B8** | Error handling | ✅ Done | Server-side logging; generic messages to client — internals never exposed |
@@ -346,11 +361,14 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **A2UI Protocol** | MessageProcessor receives 2-message sequence (`createSurface` → `updateComponents`) ✓ |
 | **SSE Transport** | Stream closes explicitly on route change ✓ |
 | **Session Cleanup** | App switch clears all surfaces + state ✓ |
-| **Components** | All 6 catalog components render from A2UI ✓ |
+| **Components** | All 7 catalog components render from A2UI ✓ |
 | **Design Tokens** | Styling driven from designTokens.ts only ✓ |
 | **Error Handling** | Graceful fallback on stream interruption ✓ |
-| **Citation Panel** | Source preview opens on card click ✓ |
-| **Search Filters** | Filters appended to agent query URL ✓ |
+| **Citation Badges** | `[N]` markers in Markdown open Drawer → Sources tab ✓ |
+| **Confidence Display** | ConfidenceBadge shows tier label + segment bar in Drawer ✓ |
+| **Document Drawer** | Right-panel slides in; Documents + Sources tabs ✓ |
+| **Drag-and-Drop** | Full-viewport overlay → auto-ingestion on drop ✓ |
+| **Search Filters** | Removed — inline citation navigation used instead ✓ |
 | **Ingest Auth** | Auth bypassed in v1; real OAuth deferred to v2 ✓ |
 
 ### Backend
@@ -393,4 +411,5 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | April 7, 2026 | 1.2 | Closed all D1–D8 deviations; updated roadmap and compliance table to reflect v1.5 close-out |
 | April 9, 2026 | 1.3 | BE v1 scaffolded: FastAPI + RAG pipeline + A2UI message builders; §8 roadmap and §10–11 updated to reflect BE v1 status |
 | April 10, 2026 | 1.4 | v1 closed out: real ingest pipeline, similarity filter, deduplication, Docker Compose infra, Supabase operational; roadmap consolidated to v1/v2/v3+; §10–11 fully updated |
+| April 10, 2026 | 1.5 | UX overhaul: Document Drawer (right panel), inline citation badges, ConfidenceBadge, ThinkingIndicator, Cmd+K palette, drag-and-drop overlay; §6, §8, §10–11 updated; search filters removed |
 

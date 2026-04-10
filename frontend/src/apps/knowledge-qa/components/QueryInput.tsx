@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 
 interface QueryInputProps {
+  value: string;
+  onChange: (value: string) => void;
   onSubmit: (query: string) => void;
   disabled?: boolean;
 }
 
-export function QueryInput({ onSubmit, disabled = false }: QueryInputProps) {
-  const [value, setValue] = useState('');
-
+export function QueryInput({ value, onChange, onSubmit, disabled = false }: QueryInputProps) {
   const handleSubmit = useCallback(() => {
     const query = value.trim();
     if (!query || disabled) return;
@@ -29,8 +29,9 @@ export function QueryInput({ onSubmit, disabled = false }: QueryInputProps) {
   return (
     <div className="relative">
       <textarea
+        data-query-input
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={disabled}
         placeholder="Ask anything about your knowledge base…"
@@ -56,7 +57,7 @@ export function QueryInput({ onSubmit, disabled = false }: QueryInputProps) {
             'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-150',
             disabled || !value.trim()
               ? 'bg-[var(--color-neutral-100)] text-[var(--color-neutral-400)] cursor-not-allowed'
-              : 'bg-gradient-to-r from-[var(--color-primary-600)] to-[var(--color-primary-500)] text-white shadow-sm hover:shadow-[var(--shadow-glow-primary-md)] hover:from-[var(--color-primary-500)] active:scale-95',
+              : 'bg-gradient-to-r from-[var(--color-primary-600)] to-[var(--color-primary-500)] text-white shadow-sm hover:shadow-[var(--shadow-glow-primary-md)] hover:from-[var(--color-primary-500)] active:scale-95 cursor-pointer',
           ].join(' ')}
         >
           {disabled ? (

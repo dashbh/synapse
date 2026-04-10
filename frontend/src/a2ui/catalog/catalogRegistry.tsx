@@ -5,6 +5,7 @@ import { ButtonComponent } from './components/ButtonComponent';
 import { BadgeComponent } from './components/BadgeComponent';
 import { SourceListComponent } from './components/SourceListComponent';
 import { MetadataCard } from './components/MetadataCard';
+import { MarkdownComponent } from './components/MarkdownComponent';
 
 /** Renders a child component by its A2UI component ID. */
 export type RenderChild = (id: string) => ReactElement | null;
@@ -55,5 +56,9 @@ export const catalogComponentMap: Record<string, CatalogRenderer> = {
       date={props.date}
       category={props.category}
     />
+  ),
+
+  Markdown: (props) => (
+    <MarkdownComponent markdown={props.markdown} />
   ),
 };

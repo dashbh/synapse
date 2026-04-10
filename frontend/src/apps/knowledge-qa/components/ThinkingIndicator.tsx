@@ -27,7 +27,9 @@ export function ThinkingIndicator({ status }: ThinkingIndicatorProps) {
     timersRef.current = [];
 
     if (!isStreaming) {
-      setVisibleSteps(0);
+      // Use a microtask to avoid synchronous setState inside effect
+      const t = setTimeout(() => setVisibleSteps(0), 0);
+      timersRef.current.push(t);
       return;
     }
 

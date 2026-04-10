@@ -13,17 +13,22 @@ CATALOG_ID = "stub"
 VERSION = "v0.9"
 
 
-def create_surface_msg() -> dict:
+def create_surface_msg(surface_id: str = SURFACE_ID) -> dict:
     return {
         "version": VERSION,
         "createSurface": {
-            "surfaceId": SURFACE_ID,
+            "surfaceId": surface_id,
             "catalogId": CATALOG_ID,
         },
     }
 
 
-def update_components_msg(answer: str, sources: list[dict], usage: dict | None = None) -> dict:
+def update_components_msg(
+    answer: str,
+    sources: list[dict],
+    usage: dict | None = None,
+    surface_id: str = SURFACE_ID,
+) -> dict:
     components = [
         {
             "id": "answer-label",
@@ -50,24 +55,16 @@ def update_components_msg(answer: str, sources: list[dict], usage: dict | None =
             "usageHint": "caption",
         })
 
-    components += [
-        {
-            "id": "sources-label",
-            "component": "Text",
-            "text": "Sources",
-            "usageHint": "h3",
-        },
-        {
-            "id": "sources-list",
-            "component": "SourceList",
-            "sources": sources,
-        },
-    ]
+    components.append({
+        "id": "sources-list",
+        "component": "SourceList",
+        "sources": sources,
+    })
 
     return {
         "version": VERSION,
         "updateComponents": {
-            "surfaceId": SURFACE_ID,
+            "surfaceId": surface_id,
             "components": components,
         },
     }

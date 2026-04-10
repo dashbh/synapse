@@ -1,7 +1,7 @@
 # A2UIPlatform Architecture Overview
 
 **Last Updated:** April 11, 2026  
-**Status:** v1.1 "Persistence & Precision" — Session persistence, hybrid search, and Architect's Triad synthesizer
+**Status:** v1.1 "Persistence & Precision" — Session persistence + multi-turn Q&A implemented; hybrid search and Architect's Triad planned
 
 ---
 
@@ -16,10 +16,11 @@
 │  │  │ PlatformShell (Nav + Surface Area)              │   │   │
 │  │  ├──────────────────────────────────────────────────┤   │   │
 │  │  │ Active App: KnowledgeQAApp                       │   │   │
-│  │  │ ├─ QueryInput (textarea)                        │   │   │
-│  │  │ └─ A2UISurface (MessageProcessor → React)       │   │   │
-│  │  │     └─ ComponentHost (type → component mapper)  │   │   │
-│  │  │        └─ Catalog (Text/Card/Button/Badge/...)  │   │   │
+│  │  │ ├─ DocumentDrawer (left sidebar, w-12↔w-80)    │   │   │
+│  │  │ ├─ QueryInput (textarea) + ThinkingIndicator    │   │   │
+│  │  │ └─ TurnView[] (one per query, latest on top)    │   │   │
+│  │  │     └─ SurfaceView (surfaceId scoped)           │   │   │
+│  │  │         └─ ComponentHost → Catalog components  │   │   │
 │  │  └──────────────────────────────────────────────────┘   │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
@@ -33,18 +34,18 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                    BACKEND (Python FastAPI)                     │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ POST /api/agents/knowledge-qa (query + session_id)    │   │
-│  │  1. Validate query + resolve session_id              │   │
-│  │  2. Stream Message 1: createSurface                   │   │
-│  │  3. OpenAI: embed query (text-embedding-ada-002)      │   │
-│  │  4. PARALLEL: pgvector similarity search              │   │
-│  │             + FTS search via GIN index (tsvector)    │   │
-│  │  5. RRF merge: fuse ranked lists → top_k=5 chunks    │   │
-│  │  6. Fetch last 10 messages for session (history)      │   │
-│  │  7. OpenAI gpt-4o-mini: generate Architect's Triad   │   │
-│  │  8. Persist assistant message (a2ui_payload) to DB    │   │
-│  │  9. Stream Message 2: updateComponents                │   │
+│  │ POST /api/agents/knowledge-qa (query + session_id + surface_id) │
+│  │  1. Validate query; read session_id + surface_id from params │
+│  │  2. Stream Message 1: createSurface(surface_id)       │   │
+│  │  3. PARALLEL: embed query + fetch last 10 history msgs│   │
+│  │  4. pgvector similarity search (match_document_chunks)│   │
+│  │  5. Filter chunks below MIN_SIMILARITY threshold      │   │
+│  │  6. Build prompt with history block prepended         │   │
+│  │  7. OpenAI gpt-4o-mini: generate answer               │   │
+│  │  8. Stream Message 2: updateComponents(surface_id)    │   │
+│  │  9. Background task: store_messages(session_id, ...)  │   │
 │  │  10. Close SSE stream                                 │   │
+│  │  [Phase 2] RRF hybrid search + Architect's Triad      │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
          │
@@ -205,24 +206,23 @@ App Root (Next.js)
    └─ Set status → STREAMING
    ↓
 3. useAgentStream opens stream (fetch POST + ReadableStream)
-   └─ Connects to: POST /api/agents/knowledge-qa?query=...
+   └─ Connects to: POST /api/agents/knowledge-qa?query=...&surface_id=qa-turn-<uuid>&session_id=<uuid>
    ↓
 4. MessageProcessor receives messages (in order):
    │
    ├─ Message 1: createSurface
-   │  └─ Registers: surfaceId="qa-result", catalogId="stub"
+   │  └─ Registers: surfaceId="qa-turn-<uuid>", catalogId="stub"
    │
    └─ Message 2: updateComponents
-      └─ Defines: [answer-label, answer-body, sources-label, sources-list]
-         with final answer text + source objects
+      └─ Defines: [answer-label, answer-body, meta-info, sources-list]
+         with final answer text + source objects (no sources-label — rendered by SourceListComponent)
    ↓
-5. A2UISurface re-renders from processor state
-   ├─ ComponentHost resolves types to React components
-   ├─ Each component gets props from processor
+5. TurnView (per query) subscribes to its surfaceId via onSurfaceCreated
+   ├─ SurfaceView renders when surface arrives
    ├─ Catalog components render with design tokens
-   └─ User sees: Answer text + Source cards
+   └─ User sees: latest turn at top; all prior turns below
    ↓
-6. Stream closes
+6. Stream closes; store_messages() fires as background task
    └─ Status → DONE
 ```
 
@@ -555,8 +555,8 @@ Response:
 Content-Type: text/plain; charset=utf-8
 Cache-Control: no-cache, no-store
 
-Message 1: {"version":"v0.9","createSurface":{"surfaceId":"qa-result","catalogId":"stub"}}
-Message 2: {"version":"v0.9","updateComponents":{"surfaceId":"qa-result","components":[...]}}
+Message 1: {"version":"v0.9","createSurface":{"surfaceId":"qa-turn-<uuid>","catalogId":"stub"}}
+Message 2: {"version":"v0.9","updateComponents":{"surfaceId":"qa-turn-<uuid>","components":[...]}}
 
 Stream closes after Message 2.
 ```

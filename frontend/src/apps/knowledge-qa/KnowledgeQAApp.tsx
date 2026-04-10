@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Files } from 'lucide-react';
-import { A2UISurface } from '@/a2ui/renderer';
+import { Menu } from 'lucide-react';
+import { type SurfaceModel, type ComponentApi } from '@a2ui/web_core/v0_9';
+import { SurfaceView } from '@/a2ui/renderer';
+import { useMessageProcessor } from '@/a2ui/processor/MessageProcessorProvider';
 import { useAgentStream } from '@/a2ui/transport/useAgentStream';
 import { StreamStatus } from '@/a2ui/transport/types';
 import { CitationProvider } from '@/a2ui/catalog/CitationContext';
@@ -14,6 +16,7 @@ import { DocumentDrawer } from './components/DocumentDrawer';
 import { CommandPalette } from './components/CommandPalette';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { DrawerProvider, useDrawer } from './context/DrawerContext';
+import { useSession } from './hooks/useSession';
 import { KNOWLEDGE_QA_CONFIG } from './config';
 
 // ---------------------------------------------------------------------------
@@ -74,20 +77,81 @@ function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// Per-turn types + components
+// ---------------------------------------------------------------------------
+
+interface Turn {
+  query: string;
+  surfaceId: string;
+}
+
+function TurnSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 animate-pulse">
+      <div className="h-4 w-full rounded bg-[var(--color-neutral-100)]" />
+      <div className="h-4 w-5/6 rounded bg-[var(--color-neutral-100)]" />
+      <div className="h-4 w-4/6 rounded bg-[var(--color-neutral-100)]" />
+    </div>
+  );
+}
+
+function TurnView({
+  turn,
+  isCurrentTurn,
+  isStreaming,
+  onOpenSource,
+}: {
+  turn: Turn;
+  isCurrentTurn: boolean;
+  isStreaming: boolean;
+  onOpenSource: (i: number) => void;
+}) {
+  const processor = useMessageProcessor();
+  const [surface, setSurface] = useState<SurfaceModel<ComponentApi> | null>(
+    () => processor.model.surfacesMap.get(turn.surfaceId) ?? null
+  );
+
+  useEffect(() => {
+    const sub = processor.model.onSurfaceCreated.subscribe((s) => {
+      if (s.id === turn.surfaceId) setSurface(s);
+    });
+    return () => sub.unsubscribe();
+  }, [processor, turn.surfaceId]);
+
+  return (
+    <div className="pb-6 border-b border-[var(--color-neutral-100)] last:border-b-0 last:pb-0">
+      <p className="text-xs text-[var(--color-neutral-400)] mb-4 truncate">
+        <span className="font-medium text-[var(--color-neutral-500)]">Q:</span>{' '}
+        {turn.query}
+      </p>
+      <CitationProvider onOpenSource={onOpenSource}>
+        {surface ? (
+          <SurfaceView surface={surface} />
+        ) : isCurrentTurn && isStreaming ? (
+          <TurnSkeleton />
+        ) : null}
+      </CitationProvider>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Inner app (has access to DrawerContext)
 // ---------------------------------------------------------------------------
 
 function KnowledgeQAInner() {
   const { status, start, stop } = useAgentStream(KNOWLEDGE_QA_CONFIG.endpoint);
-  const [lastQuery, setLastQuery] = useState<string | null>(null);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [cmdOpen, setCmdOpen] = useState(false);
-  const [queryKey, setQueryKey] = useState(0);
   const drawer = useDrawer();
+  const { sessionId, newSession } = useSession();
+  const processor = useMessageProcessor();
 
   const isStreaming = status === StreamStatus.STREAMING;
   const isError = status === StreamStatus.ERROR;
-  const hasQueried = lastQuery !== null;
+  const hasQueried = turns.length > 0;
+  const lastTurn = turns[turns.length - 1] ?? null;
 
   // Wire source registry → drawer sources state
   useEffect(() => {
@@ -95,7 +159,7 @@ function KnowledgeQAInner() {
     return () => sourceRegistry.unregister();
   }, [drawer.setSources]);
 
-  // Cmd+K / Ctrl+K
+  // Cmd+K / Ctrl+K → open command palette
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -109,12 +173,15 @@ function KnowledgeQAInner() {
 
   const handleSubmit = useCallback(
     (query: string) => {
-      setLastQuery(query);
+      const surfaceId = `qa-turn-${crypto.randomUUID()}`;
+      setTurns((prev) => [...prev, { query, surfaceId }]);
       setInputValue('');
-      setQueryKey((k) => k + 1);
-      start(query, {});
+      start(query, {
+        surface_id: surfaceId,
+        ...(sessionId ? { session_id: sessionId } : {}),
+      });
     },
-    [start]
+    [start, sessionId]
   );
 
   const handlePillSelect = useCallback(
@@ -126,26 +193,73 @@ function KnowledgeQAInner() {
   );
 
   const handleRetry = useCallback(() => {
-    if (lastQuery) start(lastQuery, {});
-  }, [lastQuery, start]);
+    if (lastTurn) {
+      start(lastTurn.query, {
+        surface_id: lastTurn.surfaceId,
+        ...(sessionId ? { session_id: sessionId } : {}),
+      });
+    }
+  }, [lastTurn, start, sessionId]);
+
+  const handleNewChat = useCallback(async () => {
+    await newSession();
+    setTurns([]);
+    setInputValue('');
+    for (const id of [...processor.model.surfacesMap.keys()]) {
+      processor.model.deleteSurface(id);
+    }
+    drawer.setSources([]);
+  }, [newSession, processor, drawer]);
+
+  // Register handler so DocumentDrawer's New Chat button can trigger it
+  useEffect(() => {
+    drawer.registerNewChat(handleNewChat);
+  }, [drawer.registerNewChat, handleNewChat]);
 
   return (
     <div className="flex h-full overflow-hidden">
+      {/* Sidebar/overlay drawer — rendered first so it appears on the left in sidebar mode */}
+      <DocumentDrawer />
+
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white">
 
         {/* Sticky header */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-[var(--color-neutral-100)] px-6 pt-4 pb-3">
+        <div className="sticky top-0 z-10 bg-white px-6 pt-4 pb-3">
           {/* Top bar: title + actions */}
           <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
+              {/* Show hamburger in main header only for overlay mode (sidebar mode uses its own strip) */}
+              {drawer.variant === 'overlay' && (
+                <button
+                  type="button"
+                  onClick={drawer.toggle}
+                  aria-label={drawer.isOpen ? 'Close sidebar' : 'Open sidebar'}
+                  className="p-1.5 rounded-lg text-[var(--color-neutral-400)] hover:text-[var(--color-neutral-700)] hover:bg-[var(--color-neutral-100)] transition-colors cursor-pointer"
+                >
+                  <Menu className="h-4 w-4" />
+                </button>
+              )}
+
               <h1 className="text-sm font-semibold text-[var(--color-neutral-800)]">
                 Knowledge Q&amp;A
               </h1>
+
+              {/* Session ID debug badge — click to copy full UUID */}
+              {sessionId && (
+                <button
+                  type="button"
+                  title={`Session ID: ${sessionId}\nClick to copy`}
+                  onClick={() => navigator.clipboard.writeText(sessionId)}
+                  className="font-mono text-[10px] text-[var(--color-neutral-300)] hover:text-[var(--color-neutral-500)] transition-colors cursor-copy select-none"
+                >
+                  sid:{sessionId.slice(0, 8)}
+                </button>
+              )}
             </div>
 
+            {/* Right actions */}
             <div className="flex items-center gap-2">
-              {/* Cmd+K hint */}
               <button
                 type="button"
                 onClick={() => setCmdOpen(true)}
@@ -153,27 +267,6 @@ function KnowledgeQAInner() {
               >
                 <kbd className="font-mono">⌘K</kbd>
                 <span>Actions</span>
-              </button>
-
-              {/* Documents button with badge */}
-              <button
-                type="button"
-                onClick={drawer.toggle}
-                aria-label="Open document library"
-                className={[
-                  'relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all',
-                  drawer.isOpen
-                    ? 'bg-[var(--color-primary-50)] text-[var(--color-primary-700)] ring-1 ring-[var(--color-primary-200)] cursor-pointer'
-                    : 'border border-[var(--color-neutral-200)] text-[var(--color-neutral-600)] hover:border-[var(--color-primary-200)] hover:text-[var(--color-primary-600)] hover:bg-[var(--color-primary-50)] cursor-pointer',
-                ].join(' ')}
-              >
-                <Files className="h-3.5 w-3.5" />
-                <span>Library</span>
-                {drawer.documentCount > 0 && (
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary-600)] text-[9px] font-bold text-white">
-                    {drawer.documentCount}
-                  </span>
-                )}
               </button>
             </div>
           </div>
@@ -190,7 +283,7 @@ function KnowledgeQAInner() {
           <ThinkingIndicator status={status} />
 
           {/* Error / retry */}
-          {isError && lastQuery && (
+          {isError && lastTurn && (
             <div className="flex items-center justify-between mt-2">
               <p className="text-xs text-[var(--color-error-600)]">Something went wrong.</p>
               <button
@@ -206,39 +299,35 @@ function KnowledgeQAInner() {
 
         {/* Scrollable results */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {/* Cancel streaming */}
-          {isStreaming && (
-            <div className="flex justify-end mb-3">
-              <button
-                type="button"
-                onClick={stop}
-                className="text-xs text-[var(--color-neutral-400)] underline underline-offset-2 hover:text-[var(--color-neutral-600)]"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-
           {!hasQueried ? (
             <EmptyState onSelect={handlePillSelect} />
           ) : (
-            <CitationProvider
-              onOpenSource={(i) => drawer.openSources(i >= 0 ? i : undefined)}
-            >
-              {lastQuery && (
-                <p className="text-xs text-[var(--color-neutral-400)] mb-4 truncate">
-                  <span className="font-medium text-[var(--color-neutral-500)]">Q:</span>{' '}
-                  {lastQuery}
-                </p>
+            <div className="flex flex-col-reverse gap-6">
+              {/* Cancel button — rendered first in DOM = appears at bottom visually in col-reverse */}
+              {isStreaming && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={stop}
+                    className="text-xs text-[var(--color-neutral-400)] underline underline-offset-2 hover:text-[var(--color-neutral-600)]"
+                  >
+                    Cancel
+                  </button>
+                </div>
               )}
-              <A2UISurface key={queryKey} loading={isStreaming} />
-            </CitationProvider>
+              {turns.map((turn, idx) => (
+                <TurnView
+                  key={turn.surfaceId}
+                  turn={turn}
+                  isCurrentTurn={idx === turns.length - 1}
+                  isStreaming={isStreaming}
+                  onOpenSource={(i) => drawer.openSources(i >= 0 ? i : undefined)}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>
-
-      {/* Right drawer */}
-      <DocumentDrawer />
 
       {/* Command palette */}
       <CommandPalette isOpen={cmdOpen} onClose={() => setCmdOpen(false)} />
@@ -255,7 +344,7 @@ function KnowledgeQAInner() {
 
 export function KnowledgeQAApp() {
   return (
-    <DrawerProvider>
+    <DrawerProvider variant="sidebar">
       <KnowledgeQAInner />
     </DrawerProvider>
   );

@@ -50,7 +50,57 @@ def _search_chunks(
     return result.data or []
 
 
-def _build_prompt(query: str, chunks: list[dict]) -> str:
+def _fetch_history(session_id: str) -> list[dict]:
+    """Return last 10 messages for a session, oldest first."""
+    result = (
+        _supabase.table("messages")
+        .select("role, content, a2ui_payload")
+        .eq("session_id", session_id)
+        .order("created_at", desc=False)
+        .limit(10)
+        .execute()
+    )
+    return result.data or []
+
+
+def store_messages(session_id: str, query: str, a2ui_payload: dict) -> None:
+    """Persist user query + assistant A2UI payload in one batch insert.
+    Called as a background task from the route — runs in a thread."""
+    try:
+        _supabase.table("messages").insert([
+            {"session_id": session_id, "role": "user", "content": query},
+            {"session_id": session_id, "role": "assistant", "a2ui_payload": a2ui_payload},
+        ]).execute()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(
+            "Failed to store messages for session %s: %s", session_id, e
+        )
+
+
+def _build_prompt(query: str, chunks: list[dict], history: list[dict] | None = None) -> str:
+    # Conversation history block (oldest first, up to 10 turns)
+    history_block = ""
+    if history:
+        turns = []
+        for msg in history:
+            if msg["role"] == "user" and msg.get("content"):
+                turns.append(f"User: {msg['content']}")
+            elif msg["role"] == "assistant" and msg.get("a2ui_payload"):
+                components = (
+                    msg["a2ui_payload"]
+                    .get("updateComponents", {})
+                    .get("components", [])
+                )
+                answer_text = next(
+                    (c.get("text", "") for c in components if c.get("id") == "answer-body"),
+                    "",
+                )
+                if answer_text:
+                    turns.append(f"Assistant: {answer_text}")
+        if turns:
+            history_block = "Previous conversation:\n" + "\n".join(turns) + "\n\n"
+
     context_blocks = []
     for i, chunk in enumerate(chunks, 1):
         source = chunk.get("source_file", "unknown")
@@ -61,6 +111,7 @@ def _build_prompt(query: str, chunks: list[dict]) -> str:
 
     context = "\n\n".join(context_blocks)
     return (
+        f"{history_block}"
         f"Answer the following question using only the provided sources. "
         f"Be concise and factual. If the sources don't contain enough information, say so.\n\n"
         f"Question: {query}\n\n"
@@ -89,6 +140,7 @@ def _format_sources(chunks: list[dict]) -> list[dict]:
 
 async def run(
     query: str,
+    session_id: str | None = None,
     category: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -98,8 +150,17 @@ async def run(
     usage_info: {model, prompt_tokens, completion_tokens, total_tokens}
     Raises on Supabase or LLM errors — caller handles via A2UI error message.
     """
-    # 1. Embed
-    embedding = await _embed(query)
+    # 1. Embed query + fetch session history in parallel
+    history_coro = (
+        asyncio.to_thread(_fetch_history, session_id)
+        if session_id
+        else asyncio.sleep(0)  # no-op placeholder
+    )
+    embedding, history_result = await asyncio.gather(
+        _embed(query),
+        history_coro,
+    )
+    history: list[dict] = history_result if session_id else []
 
     # 2. Search (sync client → offload to thread)
     chunks = await asyncio.to_thread(
@@ -116,8 +177,8 @@ async def run(
             {},
         )
 
-    # 4. Generate answer
-    prompt = _build_prompt(query, relevant_chunks)
+    # 4. Generate answer (with conversation history for context)
+    prompt = _build_prompt(query, relevant_chunks, history)
     response = await _openai.chat.completions.create(
         model=CHAT_MODEL,
         max_tokens=1024,

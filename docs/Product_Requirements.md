@@ -1,6 +1,6 @@
 # Project Synapse: AI Platform Specification
 
-**Version:** 1.6  
+**Version:** 1.7  
 **Status:** v1.1 "Persistence & Precision" — Active  
 **Last Updated:** April 11, 2026  
 
@@ -252,7 +252,7 @@ Supporting UI components (not A2UI types):
 - ✅ Design system + catalog components (7 types: Text, Card, Button, Badge, SourceList, MetadataCard, Markdown)
 - ✅ SSE explicit close on route change; volatile session reset on app nav
 - ✅ Ingestion UI — real-time step progress (Upload → Parsing → Chunking → Embedding → Storing)
-- ✅ Right-side Document Drawer (Documents + Sources tabs; replaces left sidebar)
+- ✅ Left-side Document Drawer (Documents + Sources tabs; collapsible sidebar or overlay via `variant` prop)
 - ✅ Inline `[N]` citation badges in Markdown answers → open Drawer Sources tab
 - ✅ ConfidenceBadge — color-coded strength tiers (Strong/Good/Relevant/Partial) with segment bar
 - ✅ Gemini-style ThinkingIndicator with process log (replaces static spinner)
@@ -344,11 +344,14 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **C15** | Citation metadata display | ✅ Done | Source cards in Drawer — Document, Section, Date, Category, excerpt |
 | **C16** | Semantic search filters | ✅ Removed | Replaced by inline citation navigation; URL params dropped |
 | **C17** | Admin auth gate for ingestion | ✅ Done | Bypassed in v1; real OAuth deferred to v2 |
-| **C18** | Document Drawer (right panel) | ✅ Done | `DocumentDrawer` — Documents + Sources tabs; slides in from right |
+| **C18** | Document Drawer (left sidebar) | ✅ Done | `DocumentDrawer` — Documents + Sources tabs; left-side sidebar (`variant='sidebar'`) or overlay (`variant='overlay'`); collapsed strip shows hamburger + new-chat icons |
 | **C19** | Command Palette | ✅ Done | `CommandPalette` (⌘K) — upload, view sources, new query |
 | **C20** | Drag-and-drop overlay | ✅ Done | `DragDropOverlay` — full-viewport; auto-opens Drawer + starts ingestion |
 | **C21** | Thinking indicator | ✅ Done | `ThinkingIndicator` — conic-gradient spinner + sequenced process log |
-| **C22** | Confidence scoring UI | ✅ Done | `ConfidenceBadge` — Strong/Good/Relevant/Partial tiers with segment bar |
+| **C22** | Confidence scoring UI | ✅ Done | `ConfidenceBadge` — Strong/Good/Relevant/Partial tiers; color gradient green→lime→yellow→amber; `sm` pill in drawer, `md` card in main |
+| **C26** | Multi-turn Q&A display | ✅ Done | Each query gets unique `surfaceId`; `TurnView` subscribes to its surface; latest turn shown at top; no clearing between turns |
+| **C27** | Session persistence (FE) | ✅ Done | `useSession` hook — calls `GET /api/sessions/current` on mount; creates via `POST` if none; session ID shown as debug badge in header |
+| **C28** | Session ID debug badge | ✅ Done | Truncated 8-char hex in header; click to copy full UUID |
 | **C23** | Session sidebar / switcher | 🔲 Planned | Create, name, switch, delete sessions; loads history on select |
 | **C24** | Session hydration | 🔲 Planned | Replay stored `a2ui_payload` messages through MessageProcessor on resume |
 | **C25** | Architect's Triad rendering | 🔲 Planned | Three-section answer: Blueprint / Systemic Ripple / Boundary Condition |
@@ -367,10 +370,12 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **B8** | Error handling | ✅ Done | Server-side logging; generic messages to client — internals never exposed |
 | **B9** | Supabase DB schema | ✅ Done | pgvector extension, `document_chunks` table, `match_document_chunks` RPC |
 | **B10** | Environment configuration | ✅ Done | `.env` configured with `OPENAI_API_KEY`, Supabase credentials |
-| **B11** | `sessions` + `messages` DB tables | 🔲 Planned | Supabase migration; `messages.a2ui_payload` JSONB; 10-msg context fetch |
+| **B11** | `sessions` + `messages` DB tables | ✅ Done | Supabase migration SQL documented; `messages.a2ui_payload` JSONB; `_fetch_history` returns last 10 msgs |
+| **B14** | Sessions API endpoints | ✅ Done | `GET /current`, `POST /`, `DELETE /{id}` in `routes/sessions.py`; cookie-based (`kqa_session_id`, 30-day) |
+| **B15** | Session context in RAG | ✅ Done | `_build_prompt` prepends conversation history; embed + history fetched in parallel via `asyncio.gather` |
+| **B16** | Message persistence | ✅ Done | `store_messages` fire-and-forget background task after each turn |
 | **B12** | `hybrid_search_chunks` RPC | 🔲 Planned | GIN FTS index + pgvector; RRF merge in `knowledge_qa_agent.py` |
 | **B13** | Architect's Triad prompt | 🔲 Planned | System prompt template in `knowledge_qa_agent.py`; section → A2UI mapping |
-| **B14** | Sessions API endpoints | 🔲 Planned | `GET/POST/DELETE /api/sessions` in `routes/sessions.py` |
 
 ### 🟢 Infrastructure — Complete
 
@@ -398,8 +403,10 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **Design Tokens** | Styling driven from designTokens.ts only ✓ |
 | **Error Handling** | Graceful fallback on stream interruption ✓ |
 | **Citation Badges** | `[N]` markers in Markdown open Drawer → Sources tab ✓ |
-| **Confidence Display** | ConfidenceBadge shows tier label + segment bar in Drawer ✓ |
-| **Document Drawer** | Right-panel slides in; Documents + Sources tabs ✓ |
+| **Confidence Display** | ConfidenceBadge green→lime→yellow→amber gradient; `sm` pill in sidebar, no overflow ✓ |
+| **Document Drawer** | Left sidebar; collapses to icon strip (hamburger + new-chat); sidebar/overlay variant prop ✓ |
+| **Multi-turn Q&A** | Latest turn at top; each turn tracks its own `surfaceId`; no clearing between queries ✓ |
+| **Session Badge** | Session ID debug badge in header; click to copy full UUID ✓ |
 | **Drag-and-Drop** | Full-viewport overlay → auto-ingestion on drop ✓ |
 | **Search Filters** | Removed — inline citation navigation used instead ✓ |
 | **Ingest Auth** | Auth bypassed in v1; real OAuth deferred to v2 ✓ |
@@ -410,7 +417,7 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 |---|---|
 | **2-message sequence** | `createSurface` → `updateComponents` in correct order ✓ |
 | **Message version** | Both messages carry `"version": "v0.9"` ✓ |
-| **surfaceId consistency** | Matches across both messages (`"qa-result"`) ✓ |
+| **surfaceId consistency** | Dynamic per-turn `surfaceId` from FE (`qa-turn-<uuid>`); backend accepts via URL param ✓ |
 | **createSurface structure** | No `components` field — only `surfaceId` + `catalogId` ✓ |
 | **updateComponents structure** | Full `components[]` array, not patch ✓ |
 | **Component prop names** | `text`, `usageHint`, `sources` match contract exactly ✓ |
@@ -446,4 +453,5 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | April 10, 2026 | 1.4 | v1 closed out: real ingest pipeline, similarity filter, deduplication, Docker Compose infra, Supabase operational; roadmap consolidated to v1/v2/v3+; §10–11 fully updated |
 | April 10, 2026 | 1.5 | UX overhaul: Document Drawer (right panel), inline citation badges, ConfidenceBadge, ThinkingIndicator, Cmd+K palette, drag-and-drop overlay; §6, §8, §10–11 updated; search filters removed |
 | April 11, 2026 | 1.6 | v1.1 "Persistence & Precision": Session Persistence (create/name/delete, 10-msg context, hydration), Hybrid Search (GIN FTS + RRF), Architect's Triad format; §3.1/3.2, §8 roadmap, §10 status tables updated |
+| April 11, 2026 | 1.7 | v1.1 implemented: multi-turn Q&A (unique surfaceId per turn, latest on top), session API (cookie-based, BE UUID), session context in RAG, left sidebar with collapsed icon strip, sidebar/overlay variant, ConfidenceBadge green→amber gradient, duplicate Sources heading removed, UI polish (sidebar bg, no header border); §10–11 updated |
 

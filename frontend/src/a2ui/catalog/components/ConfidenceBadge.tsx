@@ -3,10 +3,10 @@
 /**
  * Displays a citation confidence score in a visually positive way.
  *
- * Tiers:
+ * Color gradient follows confidence: green → lime → yellow → amber
  *   ≥ 87%  →  emerald  "Strong"    ●●●●
- *   ≥ 78%  →  indigo   "Good"      ●●●○
- *   ≥ 70%  →  sky      "Relevant"  ●●○○
+ *   ≥ 78%  →  lime     "Good"      ●●●○
+ *   ≥ 70%  →  yellow   "Relevant"  ●●○○
  *   < 70%  →  amber    "Partial"   ●○○○
  */
 
@@ -36,21 +36,21 @@ function getTier(score: number): Tier {
     return {
       label: 'Good',
       dots: 3,
-      dotColor: '#4F46E5',
-      textColor: 'var(--color-primary-700)',
-      bgColor: 'var(--color-primary-50)',
-      borderColor: 'var(--color-primary-200)',
-      ringColor: 'var(--color-primary-100)',
+      dotColor: '#65a30d',
+      textColor: '#3f6212',
+      bgColor: '#f7fee7',
+      borderColor: '#bef264',
+      ringColor: '#ecfccb',
     };
   if (pct >= 70)
     return {
       label: 'Relevant',
       dots: 2,
-      dotColor: '#0EA5E9',
-      textColor: 'var(--color-info-700, #0369a1)',
-      bgColor: '#f0f9ff',
-      borderColor: '#bae6fd',
-      ringColor: '#e0f2fe',
+      dotColor: '#ca8a04',
+      textColor: '#713f12',
+      bgColor: '#fefce8',
+      borderColor: '#fde047',
+      ringColor: '#fef9c3',
     };
   return {
     label: 'Partial',

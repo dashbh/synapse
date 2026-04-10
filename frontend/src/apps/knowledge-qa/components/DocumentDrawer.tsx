@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { X, Files, BookOpen } from 'lucide-react';
+import { Menu, SquarePen, Files, BookOpen } from 'lucide-react';
 import { useDrawer } from '../context/DrawerContext';
 import { IngestionPanel } from './IngestionPanel';
 import { ConfidenceBadge } from '@/a2ui/catalog/components/ConfidenceBadge';
@@ -54,8 +54,8 @@ function SourcePreviewCard({
           </p>
         </div>
         {source.score > 0 && (
-          <div className="shrink-0 w-24">
-            <ConfidenceBadge score={source.score} size="md" />
+          <div className="shrink-0">
+            <ConfidenceBadge score={source.score} size="sm" />
           </div>
         )}
       </div>
@@ -67,7 +67,7 @@ function SourcePreviewCard({
       )}
 
       {source.excerpt && (
-        <p className="text-xs text-[var(--color-neutral-500)] leading-relaxed line-clamp-3">
+        <p className="text-xs text-[var(--color-neutral-500)] leading-relaxed line-clamp-3 break-words overflow-hidden">
           {source.excerpt}
         </p>
       )}
@@ -128,122 +128,194 @@ function SourceSkeleton() {
 export function DocumentDrawer() {
   const {
     isOpen, activeTab, sources, activeCitationIndex,
-    documentCount, close, openDocuments, openSources,
+    documentCount, toggle, openDocuments, openSources,
+    triggerNewChat, variant,
   } = useDrawer();
 
-  return (
+  const isOverlay = variant === 'overlay';
+
+  // ---------- shared inner content (used in both modes when expanded) ----------
+  const fullContent = (
     <>
-      {/* Backdrop (mobile) */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/20 md:hidden"
-          onClick={close}
-          aria-hidden="true"
-        />
-      )}
+      {/* Header row 1: collapse toggle + new chat */}
+      <div className="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label="Collapse sidebar"
+          className="p-1.5 rounded-lg text-[var(--color-neutral-400)] hover:text-[var(--color-neutral-700)] hover:bg-[var(--color-neutral-100)] transition-colors cursor-pointer"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={triggerNewChat}
+          aria-label="New chat"
+          title="New chat"
+          className="p-1.5 rounded-lg text-[var(--color-neutral-400)] hover:text-[var(--color-primary-600)] hover:bg-[var(--color-primary-50)] transition-colors cursor-pointer"
+        >
+          <SquarePen className="h-4 w-4" />
+        </button>
+      </div>
 
-      {/* Drawer panel */}
-      <aside
-        role="complementary"
-        aria-label="Document drawer"
-        className={[
-          'fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-40 flex flex-col',
-          'border-l border-[var(--color-neutral-100)]',
-          'transition-transform duration-300 ease-in-out',
-          isOpen ? 'translate-x-0' : 'translate-x-full',
-        ].join(' ')}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-neutral-100)] shrink-0">
-          <div className="flex items-center gap-1 rounded-xl bg-[var(--color-neutral-50)] p-1">
-            <button
-              type="button"
-              onClick={openDocuments}
-              className={[
-                'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
-                activeTab === 'documents'
-                  ? 'bg-white text-[var(--color-primary-700)] shadow-sm cursor-pointer'
-                  : 'text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-700)] cursor-pointer',
-              ].join(' ')}
-            >
-              <Files className="h-3.5 w-3.5" />
-              <span>Documents</span>
-              {documentCount > 0 && (
-                <span className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary-100)] text-[9px] font-bold text-[var(--color-primary-700)]">
-                  {documentCount}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => openSources()}
-              className={[
-                'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
-                activeTab === 'sources'
-                  ? 'bg-white text-[var(--color-primary-700)] shadow-sm cursor-pointer'
-                  : 'text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-700)] cursor-pointer',
-              ].join(' ')}
-            >
-              <BookOpen className="h-3.5 w-3.5" />
-              <span>Sources</span>
-              {sources.length > 0 && (
-                <span className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary-100)] text-[9px] font-bold text-[var(--color-primary-700)]">
-                  {sources.length}
-                </span>
-              )}
-            </button>
-          </div>
-
+      {/* Header row 2: Documents / Sources tab switcher */}
+      <div className="px-3 pb-2 shrink-0 border-b border-[var(--color-neutral-100)]">
+        <div className="flex items-center gap-1 rounded-xl bg-[var(--color-neutral-50)] p-1">
           <button
             type="button"
-            onClick={close}
-            aria-label="Close drawer"
-            className="p-1.5 rounded-lg text-[var(--color-neutral-400)] hover:text-[var(--color-neutral-600)] hover:bg-[var(--color-neutral-100)] transition-colors"
+            onClick={openDocuments}
+            className={[
+              'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+              activeTab === 'documents'
+                ? 'bg-white text-[var(--color-primary-700)] shadow-sm cursor-pointer'
+                : 'text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-700)] cursor-pointer',
+            ].join(' ')}
           >
-            <X className="h-4 w-4" />
+            <Files className="h-3.5 w-3.5" />
+            <span>Documents</span>
+            {documentCount > 0 && (
+              <span className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary-100)] text-[9px] font-bold text-[var(--color-primary-700)]">
+                {documentCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => openSources()}
+            className={[
+              'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+              activeTab === 'sources'
+                ? 'bg-white text-[var(--color-primary-700)] shadow-sm cursor-pointer'
+                : 'text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-700)] cursor-pointer',
+            ].join(' ')}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            <span>Sources</span>
+            {sources.length > 0 && (
+              <span className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary-100)] text-[9px] font-bold text-[var(--color-primary-700)]">
+                {sources.length}
+              </span>
+            )}
           </button>
         </div>
+      </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          {activeTab === 'documents' && (
-            <div>
-              <IngestionPanel />
-            </div>
-          )}
-
-          {activeTab === 'sources' && (
-            <div className="p-4">
-              {sources.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 py-12 text-center">
-                  <div className="rounded-2xl bg-[var(--color-neutral-50)] p-4">
-                    <BookOpen className="h-8 w-8 text-[var(--color-neutral-300)]" />
-                  </div>
-                  <p className="text-sm font-medium text-[var(--color-neutral-500)]">No sources yet</p>
-                  <p className="text-xs text-[var(--color-neutral-400)]">
-                    Ask a question to see the knowledge base chunks that informed the answer.
-                  </p>
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === 'documents' && (
+          <div>
+            <IngestionPanel />
+          </div>
+        )}
+        {activeTab === 'sources' && (
+          <div className="p-4">
+            {sources.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-12 text-center">
+                <div className="rounded-2xl bg-[var(--color-neutral-50)] p-4">
+                  <BookOpen className="h-8 w-8 text-[var(--color-neutral-300)]" />
                 </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <p className="text-[10px] font-bold tracking-widest uppercase text-[var(--color-neutral-400)] mb-1">
-                    {sources.length} source{sources.length !== 1 ? 's' : ''} used
-                  </p>
-                  {sources.map((source, i) => (
-                    <SourcePreviewCard
-                      key={source.id || i}
-                      source={source}
-                      index={i}
-                      isActive={activeCitationIndex === i}
-                      onClick={() => openSources(i)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </aside>
+                <p className="text-sm font-medium text-[var(--color-neutral-500)]">No sources yet</p>
+                <p className="text-xs text-[var(--color-neutral-400)]">
+                  Ask a question to see the knowledge base chunks that informed the answer.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <p className="text-[10px] font-bold tracking-widest uppercase text-[var(--color-neutral-400)] mb-1">
+                  {sources.length} source{sources.length !== 1 ? 's' : ''} used
+                </p>
+                {sources.map((source, i) => (
+                  <SourcePreviewCard
+                    key={source.id || i}
+                    source={source}
+                    index={i}
+                    isActive={activeCitationIndex === i}
+                    onClick={() => openSources(i)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </>
+  );
+
+  // ---------- overlay mode: slides in/out via transform ----------
+  if (isOverlay) {
+    return (
+      <>
+        {isOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/20 md:hidden"
+            onClick={toggle}
+            aria-hidden="true"
+          />
+        )}
+        <aside
+          role="complementary"
+          aria-label="Document drawer"
+          className={[
+            'fixed top-0 left-0 h-full w-80 bg-[#f5f6f8] shadow-2xl z-40 flex flex-col',
+            'border-r border-[var(--color-neutral-150,#e8eaed)]',
+            'transition-transform duration-300 ease-in-out',
+            isOpen ? 'translate-x-0' : '-translate-x-full',
+          ].join(' ')}
+        >
+          {fullContent}
+        </aside>
+      </>
+    );
+  }
+
+  // ---------- sidebar mode: persistent strip (w-12) ↔ full (w-80) ----------
+  return (
+    <aside
+      role="complementary"
+      aria-label="Document drawer"
+      className={[
+        'relative h-full shrink-0 overflow-hidden bg-[#f5f6f8] border-r border-[var(--color-neutral-150,#e8eaed)]',
+        'transition-[width] duration-300 ease-in-out',
+        isOpen ? 'w-80' : 'w-12',
+      ].join(' ')}
+    >
+      {/* Collapsed icon strip — visible when sidebar is not expanded */}
+      <div
+        className={[
+          'absolute inset-0 flex flex-col items-center pt-3 gap-1',
+          'transition-opacity duration-150',
+          isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100',
+        ].join(' ')}
+      >
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label="Expand sidebar"
+          className="p-1.5 rounded-lg text-[var(--color-neutral-400)] hover:text-[var(--color-neutral-700)] hover:bg-[var(--color-neutral-100)] transition-colors cursor-pointer"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={triggerNewChat}
+          aria-label="New chat"
+          title="New chat"
+          className="p-1.5 rounded-lg text-[var(--color-neutral-400)] hover:text-[var(--color-primary-600)] hover:bg-[var(--color-primary-50)] transition-colors cursor-pointer"
+        >
+          <SquarePen className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Full content — fades in as sidebar expands to w-80 */}
+      <div
+        className={[
+          'absolute inset-0 flex flex-col w-80',
+          'transition-opacity duration-150',
+          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none',
+        ].join(' ')}
+      >
+        {fullContent}
+      </div>
+    </aside>
   );
 }

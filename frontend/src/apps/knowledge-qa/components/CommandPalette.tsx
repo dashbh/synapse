@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Upload, BookOpen, Search, X } from 'lucide-react';
+import { Upload, BookOpen, SquarePen, Search, X } from 'lucide-react';
 import { useDrawer } from '../context/DrawerContext';
 
 interface Action {
@@ -30,10 +30,18 @@ const ACTIONS: Action[] = [
     run: (ctx, close) => { ctx.openSources(); close(); },
   },
   {
-    id: 'new-query',
+    id: 'new-chat',
+    icon: SquarePen,
+    label: 'New chat',
+    description: 'Start a fresh session — clears history and all Q&A turns',
+    shortcut: '⌘K',
+    run: (ctx, close) => { close(); ctx.triggerNewChat(); },
+  },
+  {
+    id: 'focus-input',
     icon: Search,
-    label: 'New query',
-    description: 'Focus the search input and start fresh',
+    label: 'Focus input',
+    description: 'Jump to the query input',
     shortcut: '/',
     run: (_ctx, close) => {
       close();

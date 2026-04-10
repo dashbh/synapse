@@ -5,11 +5,13 @@ import {
   useContext,
   useState,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react';
 import type { RawSource } from '@/a2ui/catalog/sourceRegistry';
 
 type DrawerTab = 'documents' | 'sources';
+export type DrawerVariant = 'overlay' | 'sidebar';
 
 interface DrawerContextValue {
   isOpen: boolean;
@@ -18,6 +20,11 @@ interface DrawerContextValue {
   activeCitationIndex: number | null;
   documentCount: number;
   pendingFile: File | null;
+  variant: DrawerVariant;
+  /** Register the "New Chat" handler from the parent app. Uses a ref — no re-render. */
+  registerNewChat: (fn: () => void) => void;
+  /** Called by DocumentDrawer's New Chat button — delegates to registered handler. */
+  triggerNewChat: () => void;
   openDocuments: () => void;
   openSources: (citationIndex?: number) => void;
   close: () => void;
@@ -30,13 +37,22 @@ interface DrawerContextValue {
 
 const DrawerContext = createContext<DrawerContextValue | null>(null);
 
-export function DrawerProvider({ children }: { children: ReactNode }) {
+export function DrawerProvider({
+  children,
+  variant = 'overlay',
+}: {
+  children: ReactNode;
+  variant?: DrawerVariant;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DrawerTab>('documents');
   const [sources, setSources] = useState<RawSource[]>([]);
   const [activeCitationIndex, setActiveCitationIndex] = useState<number | null>(null);
   const [documentCount, setDocumentCount] = useState(0);
   const [pendingFile, setPendingFileState] = useState<File | null>(null);
+  const newChatRef = useRef<(() => void) | null>(null);
+  const registerNewChat = useCallback((fn: () => void) => { newChatRef.current = fn; }, []);
+  const triggerNewChat = useCallback(() => { newChatRef.current?.(); }, []);
 
   const openDocuments = useCallback(() => {
     setActiveTab('documents');
@@ -73,6 +89,9 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
         activeCitationIndex,
         documentCount,
         pendingFile,
+        variant,
+        registerNewChat,
+        triggerNewChat,
         openDocuments,
         openSources,
         close,

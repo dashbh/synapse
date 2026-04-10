@@ -1,8 +1,8 @@
 # Project Synapse: AI Platform Specification
 
-**Version:** 1.0  
-**Status:** Finalized Requirements  
-**Last Updated:** April 7, 2026  
+**Version:** 1.6  
+**Status:** v1.1 "Persistence & Precision" — Active  
+**Last Updated:** April 11, 2026  
 
 ---
 
@@ -21,7 +21,7 @@ Synapse provides a unified platform shell that orchestrates multiple AI "intelli
 - **Modular:** Each app is a specialized intelligence service (Knowledge-QA, Reflexive-Brain, etc.)
 - **Declarative:** All UI is rendered via A2UI protocol, never raw JSON blobs
 - **Reactive:** SSE streams enable real-time, incremental UI updates
-- **Stateful:** Full UI reset between app navigation for clean context boundaries
+- **Stateful:** Named sessions persist across reloads; multi-turn context maintained per session
 
 ---
 
@@ -54,10 +54,26 @@ Synapse provides a unified platform shell that orchestrates multiple AI "intelli
 
 **Core Capabilities:**
 
-#### Semantic Search
-- Query processed document indices
-- Return ranked results with relevance scoring
+#### Hybrid Search (v1.1)
+- Query processed document indices using **both** semantic vector search and full-text keyword search in parallel
+- Merge results via **Reciprocal Rank Fusion (RRF)** before passing to the LLM — improves accuracy for exact technical terms, acronyms, and version strings
+- Return top-5 fused chunks with relevance scoring
 - Support for multi-term complex queries
+
+#### Session Persistence (v1.1)
+- Users can **create**, **name**, and **delete** chat sessions from the UI
+- Sessions persist across page reloads — the full conversation is hydrated from stored A2UI payloads
+- The agent maintains context of the **previous 10 messages** per session (sliding window)
+- Session list displayed in a sidebar or header dropdown; switching sessions reloads that session's history
+- Each session stores the raw user query and the full A2UI `updateComponents` JSON payload for the assistant response
+
+#### The Architect's Triad (v1.1)
+- All Knowledge-QA answers are structured into three mandatory sections:
+  - **The Blueprint** — Precise core concept definition; no padding
+  - **The Systemic Ripple** — How this concept propagates through surrounding architecture and data flows
+  - **The Boundary Condition** — Hard limits, failure modes, and trade-off decisions
+- The LLM is instructed via system prompt to produce this format for every response
+- Each section is rendered as a distinct A2UI component block (H2 heading + MarkdownComponent)
 
 #### Rich Citations
 - UI support for Reference components
@@ -83,10 +99,14 @@ Synapse provides a unified platform shell that orchestrates multiple AI "intelli
 - Cancel capability mid-ingestion
 
 **Success Criteria:**
-- Semantic search returns relevant results within 2 seconds
+- Hybrid search (vector + FTS) returns relevant results within 2 seconds
+- RRF fusion improves retrieval precision for exact technical terms vs. pure vector search
 - Citations correctly link to source material
 - Ingestion UI accessible only to authenticated admins
 - Real-time progress feedback for ingestion tasks
+- Users can create, name, switch, and delete chat sessions without data loss
+- Session history hydrates correctly after page reload
+- Architect's Triad format rendered for every Knowledge-QA response
 
 ### 3.2 App: Reflexive-Brain (The Nervous System) — Phase 2
 
@@ -259,18 +279,24 @@ Supporting UI components (not A2UI types):
 - ✅ CORS configurable via `CORS_ORIGINS` env var
 - ✅ Root-level `.env.example` with all required variables
 
+### v1.1 — "Persistence & Precision" (In Progress)
+
+- [ ] Session Persistence — create/name/delete sessions; 10-message context window; `sessions` + `messages` tables
+- [ ] Session Hydration — FE replays `a2ui_payload` through MessageProcessor on session resume
+- [ ] Hybrid Search — GIN FTS index + `hybrid_search_chunks` RPC + Python RRF merge
+- [ ] Architect's Triad — structured Blueprint/Ripple/Boundary answer format
+- [ ] Sessions API — `GET/POST/DELETE /api/sessions` endpoints
+
 ### v2.0 — Planned
 
 - [ ] Reflexive-Brain app (quick capture, global search, agentic triage)
 - [ ] Implicit Ingestion: automated watcher services for cloud/local folder syncing
-- [ ] Session Hydration: persistence layer for cross-session conversation resumption
 - [ ] Real admin authentication (OAuth/SAML)
 - [ ] Admin bearer token guard on ingestion endpoint
 
 ### v3.0+ — Future
 
 - [ ] Component Extensibility: dynamic A2UI mapping for agent-proposed custom layouts
-- [ ] Advanced search: full-text + semantic hybrid search
 - [ ] Custom agent templates
 - [ ] Multi-workspace support
 - [ ] Cloud sync (document versioning, sharing)
@@ -297,7 +323,7 @@ Supporting UI components (not A2UI types):
 
 All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 
-### 🟢 Frontend — Complete
+### 🟡 Frontend — v1.1 In Progress
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
@@ -323,8 +349,11 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **C20** | Drag-and-drop overlay | ✅ Done | `DragDropOverlay` — full-viewport; auto-opens Drawer + starts ingestion |
 | **C21** | Thinking indicator | ✅ Done | `ThinkingIndicator` — conic-gradient spinner + sequenced process log |
 | **C22** | Confidence scoring UI | ✅ Done | `ConfidenceBadge` — Strong/Good/Relevant/Partial tiers with segment bar |
+| **C23** | Session sidebar / switcher | 🔲 Planned | Create, name, switch, delete sessions; loads history on select |
+| **C24** | Session hydration | 🔲 Planned | Replay stored `a2ui_payload` messages through MessageProcessor on resume |
+| **C25** | Architect's Triad rendering | 🔲 Planned | Three-section answer: Blueprint / Systemic Ripple / Boundary Condition |
 
-### 🟢 Backend — Complete
+### 🟡 Backend — v1.1 In Progress
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
@@ -338,6 +367,10 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **B8** | Error handling | ✅ Done | Server-side logging; generic messages to client — internals never exposed |
 | **B9** | Supabase DB schema | ✅ Done | pgvector extension, `document_chunks` table, `match_document_chunks` RPC |
 | **B10** | Environment configuration | ✅ Done | `.env` configured with `OPENAI_API_KEY`, Supabase credentials |
+| **B11** | `sessions` + `messages` DB tables | 🔲 Planned | Supabase migration; `messages.a2ui_payload` JSONB; 10-msg context fetch |
+| **B12** | `hybrid_search_chunks` RPC | 🔲 Planned | GIN FTS index + pgvector; RRF merge in `knowledge_qa_agent.py` |
+| **B13** | Architect's Triad prompt | 🔲 Planned | System prompt template in `knowledge_qa_agent.py`; section → A2UI mapping |
+| **B14** | Sessions API endpoints | 🔲 Planned | `GET/POST/DELETE /api/sessions` in `routes/sessions.py` |
 
 ### 🟢 Infrastructure — Complete
 
@@ -412,4 +445,5 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | April 9, 2026 | 1.3 | BE v1 scaffolded: FastAPI + RAG pipeline + A2UI message builders; §8 roadmap and §10–11 updated to reflect BE v1 status |
 | April 10, 2026 | 1.4 | v1 closed out: real ingest pipeline, similarity filter, deduplication, Docker Compose infra, Supabase operational; roadmap consolidated to v1/v2/v3+; §10–11 fully updated |
 | April 10, 2026 | 1.5 | UX overhaul: Document Drawer (right panel), inline citation badges, ConfidenceBadge, ThinkingIndicator, Cmd+K palette, drag-and-drop overlay; §6, §8, §10–11 updated; search filters removed |
+| April 11, 2026 | 1.6 | v1.1 "Persistence & Precision": Session Persistence (create/name/delete, 10-msg context, hydration), Hybrid Search (GIN FTS + RRF), Architect's Triad format; §3.1/3.2, §8 roadmap, §10 status tables updated |
 

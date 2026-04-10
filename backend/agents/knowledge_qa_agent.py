@@ -24,7 +24,7 @@ _supabase: Client = create_client(settings.supabase_url, settings.supabase_anon_
 EMBEDDING_MODEL = "text-embedding-ada-002"
 CHAT_MODEL = "gpt-4o-mini"
 TOP_K = 5
-MIN_SIMILARITY = 0.78  # chunks below this score are not relevant — raise to tighten, lower to broaden
+MIN_SIMILARITY = 0.75  # chunks below this score are not relevant — raise to tighten, lower to broaden
 
 
 async def _embed(text: str) -> list[float]:

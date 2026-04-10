@@ -33,9 +33,8 @@ export function ThinkingIndicator({ status }: ThinkingIndicatorProps) {
       return;
     }
 
-    setVisibleSteps(1);
-    STEP_DELAYS.slice(1).forEach((delay, i) => {
-      const t = setTimeout(() => setVisibleSteps(i + 2), delay);
+    STEP_DELAYS.forEach((delay, i) => {
+      const t = setTimeout(() => setVisibleSteps(i + 1), delay);
       timersRef.current.push(t);
     });
 

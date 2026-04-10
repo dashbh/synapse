@@ -144,7 +144,7 @@ export function IngestionPanel() {
   // Respond to files dropped via the global DragDropOverlay
   useEffect(() => {
     if (pendingFile) {
-      setFileName(pendingFile.name);
+      setTimeout(() => setFileName(pendingFile.name), 0);
       reset();
       start(pendingFile);
       clearPendingFile();

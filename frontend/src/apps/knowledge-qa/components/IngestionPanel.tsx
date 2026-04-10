@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Upload, FileText, Scissors, Cpu, Database } from 'lucide-react';
 import {
   useIngestionStream,
@@ -8,6 +8,7 @@ import {
   type IngestionStep,
   type StepState,
 } from '../hooks/useIngestionStream';
+import { useDrawer } from '../context/DrawerContext';
 
 const INGEST_ENDPOINT = '/api/agents/ingest';
 
@@ -132,12 +133,32 @@ function ProgressCard({
 export function IngestionPanel() {
   const { steps, progress, currentMessage, isStreaming, isDone, isError, isUnauthorized, start, reset } =
     useIngestionStream(INGEST_ENDPOINT);
+  const { pendingFile, clearPendingFile, onIngestionSuccess } = useDrawer();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const hasStarted = STEP_ORDER.some((s) => steps[s].status !== 'idle');
+
+  // Respond to files dropped via the global DragDropOverlay
+  useEffect(() => {
+    if (pendingFile) {
+      setFileName(pendingFile.name);
+      reset();
+      start(pendingFile);
+      clearPendingFile();
+    }
+  }, [pendingFile, start, reset, clearPendingFile]);
+
+  // Notify context when ingestion completes so badge count updates
+  const prevDoneRef = useRef(false);
+  useEffect(() => {
+    if (isDone && !prevDoneRef.current) {
+      onIngestionSuccess();
+    }
+    prevDoneRef.current = isDone;
+  }, [isDone, onIngestionSuccess]);
 
   const handleFile = useCallback(
     (file: File) => {

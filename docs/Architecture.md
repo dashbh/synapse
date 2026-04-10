@@ -156,12 +156,12 @@ App Root (Next.js)
               └─ ComponentHost
                  │
                  └─ Catalog Components (mapped from A2UI types)
-                    ├─ TextComponent (h1/h2/h3/p/caption)
+                    ├─ TextComponent (h1/h2/h3/body/caption)
                     ├─ CardComponent (shadcn wrapper)
                     ├─ ButtonComponent (interaction)
                     ├─ BadgeComponent (metadata)
-                    ├─ SourceListComponent (custom — source attribution)
-                    └─ MarkdownComponent (react-markdown + remark-gfm)
+                    ├─ MarkdownComponent (react-markdown + GFM; [N] → citation badges)
+                    └─ SourceListComponent (compact strip; registers sources via sourceRegistry)
 ```
 
 ### State Ownership (Critical)
@@ -481,9 +481,10 @@ src/a2ui/catalog/components/
 ├─ CardComponent       (v1)
 ├─ ButtonComponent     (v1)
 ├─ BadgeComponent      (v1)
-├─ SourceListComponent (v1 custom — citation drawer)
+├─ SourceListComponent (v1 — compact citation strip; registers sources via sourceRegistry)
 ├─ MetadataCard        (v1 — document/section/date/category)
-├─ MarkdownComponent   (v1 — react-markdown + remark-gfm)
+├─ MarkdownComponent   (v1 — react-markdown + GFM; [N] patterns → clickable citation badges)
+├─ ConfidenceBadge     (v1 UI helper — Strong/Good/Relevant/Partial tiers; used by Drawer)
 ├─ ImageComponent      (v2+)
 ├─ FormComponent       (v2+)
 └─ ...

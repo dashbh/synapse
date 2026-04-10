@@ -1,13 +1,25 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { resolveStaticString } from '@/a2ui/types';
+import { useCitation } from '../CitationContext';
 
 interface MarkdownComponentProps {
   markdown: unknown;
 }
 
+/**
+ * Pre-process markdown to convert [N] citation markers into safe markdown
+ * links using a `cite:` scheme. The custom `a` renderer below intercepts
+ * them and renders a clickable badge instead of a real anchor.
+ */
+function addCitationLinks(md: string): string {
+  return md.replace(/\[(\d+)\]/g, '[$1](cite:$1)');
+}
+
 export function MarkdownComponent({ markdown }: MarkdownComponentProps) {
-  const content = resolveStaticString(markdown);
+  const { openSource } = useCitation();
+  const raw = resolveStaticString(markdown);
+  const content = addCitationLinks(raw);
 
   return (
     <ReactMarkdown
@@ -56,12 +68,27 @@ export function MarkdownComponent({ markdown }: MarkdownComponentProps) {
         em: ({ children }) => (
           <em className="italic text-[var(--color-neutral-600)]">{children}</em>
         ),
-        a: ({ href, children }) => (
-          <a href={href} target="_blank" rel="noopener noreferrer"
-            className="text-[var(--color-primary-600)] underline underline-offset-2 hover:text-[var(--color-primary-800)]">
-            {children}
-          </a>
-        ),
+        a: ({ href, children }) => {
+          if (href?.startsWith('cite:')) {
+            const n = parseInt(href.replace('cite:', ''), 10);
+            return (
+              <button
+                type="button"
+                onClick={() => openSource(n - 1)}
+                className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-[var(--color-primary-100)] text-[9px] font-bold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-200)] transition-colors align-middle mx-0.5 cursor-pointer select-none"
+                title={`View source ${n}`}
+              >
+                {n}
+              </button>
+            );
+          }
+          return (
+            <a href={href} target="_blank" rel="noopener noreferrer"
+              className="text-[var(--color-primary-600)] underline underline-offset-2 hover:text-[var(--color-primary-800)] cursor-pointer">
+              {children}
+            </a>
+          );
+        },
         table: ({ children }) => (
           <div className="overflow-x-auto mb-3">
             <table className="w-full text-sm border-collapse">{children}</table>

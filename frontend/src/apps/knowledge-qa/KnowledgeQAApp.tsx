@@ -1,42 +1,34 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Files } from 'lucide-react';
 import { A2UISurface } from '@/a2ui/renderer';
 import { useAgentStream } from '@/a2ui/transport/useAgentStream';
 import { StreamStatus } from '@/a2ui/transport/types';
+import { CitationProvider } from '@/a2ui/catalog/CitationContext';
+import { sourceRegistry } from '@/a2ui/catalog/sourceRegistry';
 import { QueryInput } from './components/QueryInput';
-import { StreamStatusBar } from './components/StreamStatusBar';
-import { IngestionPanel } from './components/IngestionPanel';
+import { ThinkingIndicator } from './components/ThinkingIndicator';
+import { DocumentDrawer } from './components/DocumentDrawer';
+import { CommandPalette } from './components/CommandPalette';
+import { DragDropOverlay } from './components/DragDropOverlay';
+import { DrawerProvider, useDrawer } from './context/DrawerContext';
 import { KNOWLEDGE_QA_CONFIG } from './config';
 
-function KnowledgeStats() {
-  return (
-    <div className="px-4 py-4 border-t border-[var(--color-neutral-100)]">
-      <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--color-neutral-400)] mb-3">
-        Knowledge Base
-      </p>
-      <div className="flex flex-col gap-2">
-        {[
-          { icon: '📄', label: '3 documents' },
-          { icon: '⬡', label: '42 vectors' },
-          { icon: '🕐', label: 'Updated 2m ago' },
-        ].map(({ icon, label }) => (
-          <div key={label} className="flex items-center gap-3">
-            <span className="text-sm leading-none w-5 text-center shrink-0">{icon}</span>
-            <span className="text-xs text-[var(--color-neutral-500)]">{label}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// ---------------------------------------------------------------------------
+// Suggested questions
+// ---------------------------------------------------------------------------
 
 const SUGGESTED_QUESTIONS = [
   'Summarize the latest architecture decisions',
   'How does the A2UI protocol handle streaming?',
   'What documents have been ingested into the knowledge base?',
 ];
+
+// ---------------------------------------------------------------------------
+// Empty state
+// ---------------------------------------------------------------------------
 
 function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
   return (
@@ -81,40 +73,45 @@ function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
   );
 }
 
-function SidebarToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="md:hidden flex items-center gap-1.5 text-xs font-medium text-[var(--color-neutral-500)] hover:text-[var(--color-primary-600)] transition-colors"
-      aria-label={open ? 'Close sidebar' : 'Open sidebar'}
-    >
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        {open ? (
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        ) : (
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M3 12h18M3 18h18" />
-        )}
-      </svg>
-      {open ? 'Close' : 'Library'}
-    </button>
-  );
-}
+// ---------------------------------------------------------------------------
+// Inner app (has access to DrawerContext)
+// ---------------------------------------------------------------------------
 
-export function KnowledgeQAApp() {
+function KnowledgeQAInner() {
   const { status, start, stop } = useAgentStream(KNOWLEDGE_QA_CONFIG.endpoint);
   const [lastQuery, setLastQuery] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [queryKey, setQueryKey] = useState(0);
+  const drawer = useDrawer();
 
   const isStreaming = status === StreamStatus.STREAMING;
   const isError = status === StreamStatus.ERROR;
   const hasQueried = lastQuery !== null;
 
+  // Wire source registry → drawer sources state
+  useEffect(() => {
+    sourceRegistry.register((sources) => drawer.setSources(sources));
+    return () => sourceRegistry.unregister();
+  }, [drawer.setSources]);
+
+  // Cmd+K / Ctrl+K
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCmdOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const handleSubmit = useCallback(
     (query: string) => {
       setLastQuery(query);
-      setSidebarOpen(false);
+      setInputValue('');
+      setQueryKey((k) => k + 1);
       start(query, {});
     },
     [start]
@@ -134,84 +131,132 @@ export function KnowledgeQAApp() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Sidebar */}
-      <aside
-        className={[
-          'shrink-0 w-72 bg-white border-r border-[var(--color-neutral-100)] overflow-y-auto flex flex-col',
-          'fixed inset-y-0 left-0 z-30 transition-transform duration-200 md:static md:translate-x-0',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-        ].join(' ')}
-      >
-        <IngestionPanel />
-        <div className="flex-1" />
-        <KnowledgeStats />
-      </aside>
-
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/20 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
-      {/* Main */}
+      {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Sticky glass search area */}
-        <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-[var(--color-neutral-100)] px-6 pt-5 pb-4">
-          <div className="flex items-center gap-3 mb-4">
-            <SidebarToggle open={sidebarOpen} onClick={() => setSidebarOpen((v) => !v)} />
+
+        {/* Sticky header */}
+        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-[var(--color-neutral-100)] px-6 pt-4 pb-3">
+          {/* Top bar: title + actions */}
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-semibold text-[var(--color-neutral-800)]">
+                Knowledge Q&amp;A
+              </h1>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Cmd+K hint */}
+              <button
+                type="button"
+                onClick={() => setCmdOpen(true)}
+                className="hidden sm:flex items-center gap-1.5 rounded-lg border border-[var(--color-neutral-200)] bg-[var(--color-neutral-50)] px-2.5 py-1 text-[11px] text-[var(--color-neutral-400)] hover:text-[var(--color-neutral-600)] hover:border-[var(--color-neutral-300)] transition-colors cursor-pointer"
+              >
+                <kbd className="font-mono">⌘K</kbd>
+                <span>Actions</span>
+              </button>
+
+              {/* Documents button with badge */}
+              <button
+                type="button"
+                onClick={drawer.toggle}
+                aria-label="Open document library"
+                className={[
+                  'relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all',
+                  drawer.isOpen
+                    ? 'bg-[var(--color-primary-50)] text-[var(--color-primary-700)] ring-1 ring-[var(--color-primary-200)] cursor-pointer'
+                    : 'border border-[var(--color-neutral-200)] text-[var(--color-neutral-600)] hover:border-[var(--color-primary-200)] hover:text-[var(--color-primary-600)] hover:bg-[var(--color-primary-50)] cursor-pointer',
+                ].join(' ')}
+              >
+                <Files className="h-3.5 w-3.5" />
+                <span>Library</span>
+                {drawer.documentCount > 0 && (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary-600)] text-[9px] font-bold text-white">
+                    {drawer.documentCount}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
+
+          {/* Query input */}
           <QueryInput
             value={inputValue}
             onChange={setInputValue}
             onSubmit={handleSubmit}
             disabled={isStreaming}
           />
+
+          {/* Thinking indicator — appears below input when streaming */}
+          <ThinkingIndicator status={status} />
+
+          {/* Error / retry */}
+          {isError && lastQuery && (
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-xs text-[var(--color-error-600)]">Something went wrong.</p>
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="text-xs text-[var(--color-primary-600)] underline underline-offset-2 hover:text-[var(--color-primary-700)]"
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Scrollable results */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {status !== StreamStatus.IDLE && (
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <StreamStatusBar status={status} />
-              <div className="flex items-center gap-3">
-                {isStreaming && (
-                  <button
-                    type="button"
-                    onClick={stop}
-                    className="text-xs text-[var(--color-neutral-400)] underline underline-offset-2 hover:text-[var(--color-neutral-600)]"
-                  >
-                    Cancel
-                  </button>
-                )}
-                {isError && lastQuery && (
-                  <button
-                    type="button"
-                    onClick={handleRetry}
-                    className="text-xs text-[var(--color-primary-600)] underline underline-offset-2 hover:text-[var(--color-primary-700)]"
-                  >
-                    Retry
-                  </button>
-                )}
-              </div>
+          {/* Cancel streaming */}
+          {isStreaming && (
+            <div className="flex justify-end mb-3">
+              <button
+                type="button"
+                onClick={stop}
+                className="text-xs text-[var(--color-neutral-400)] underline underline-offset-2 hover:text-[var(--color-neutral-600)]"
+              >
+                Cancel
+              </button>
             </div>
           )}
+
           {!hasQueried ? (
             <EmptyState onSelect={handlePillSelect} />
           ) : (
-            <>
+            <CitationProvider
+              onOpenSource={(i) => drawer.openSources(i >= 0 ? i : undefined)}
+            >
               {lastQuery && (
                 <p className="text-xs text-[var(--color-neutral-400)] mb-4 truncate">
                   <span className="font-medium text-[var(--color-neutral-500)]">Q:</span>{' '}
                   {lastQuery}
                 </p>
               )}
-              <A2UISurface loading={isStreaming} />
-            </>
+              <A2UISurface key={queryKey} loading={isStreaming} />
+            </CitationProvider>
           )}
         </div>
       </div>
+
+      {/* Right drawer */}
+      <DocumentDrawer />
+
+      {/* Command palette */}
+      <CommandPalette isOpen={cmdOpen} onClose={() => setCmdOpen(false)} />
+
+      {/* Viewport drag-and-drop overlay */}
+      <DragDropOverlay onFileDrop={drawer.setPendingFile} />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Exported root — wraps with DrawerProvider
+// ---------------------------------------------------------------------------
+
+export function KnowledgeQAApp() {
+  return (
+    <DrawerProvider>
+      <KnowledgeQAInner />
+    </DrawerProvider>
   );
 }

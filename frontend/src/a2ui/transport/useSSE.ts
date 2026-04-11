@@ -7,6 +7,8 @@ export interface UseSSEOptions {
   onMessage: (line: string) => void;
   onError?: (error: Error) => void;
   onDone?: () => void;
+  /** Called once after the response headers arrive with the backend's confirmed trace ID. */
+  onTraceId?: (traceId: string) => void;
 }
 
 interface UseSSEReturn {
@@ -47,11 +49,28 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
 
     (async () => {
       try {
+        // Generate a W3C traceparent header for this stream request so the
+        // backend can attach its spans as children of this frontend-originated
+        // trace. Format: "00-{32hex traceId}-{16hex spanId}-01"
+        // crypto.randomUUID() is available natively in all modern browsers and
+        // Node.js 19+ (Next.js server-side) — no extra dependencies needed.
+        const traceId = crypto.randomUUID().replace(/-/g, '');
+        const spanId = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+        const traceparent = `00-${traceId}-${spanId}-01`;
+
         const response = await fetch(url, {
           method: 'POST',
           ...(body !== undefined ? { body } : {}),
           signal: controller.signal,
+          headers: { traceparent },
         });
+
+        // Capture the backend's confirmed trace ID (may differ from the
+        // frontend-generated one if the backend creates its own root span).
+        const backendTraceId = response.headers.get('X-Trace-ID');
+        if (backendTraceId) {
+          optionsRef.current.onTraceId?.(backendTraceId);
+        }
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status} ${response.statusText}`);

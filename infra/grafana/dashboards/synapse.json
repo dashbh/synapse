@@ -1,0 +1,235 @@
+{
+  "title": "Synapse Observability",
+  "uid": "synapse-main",
+  "description": "Request flow, RAG pipeline latency, structured logs, and error tracking for the Synapse backend.",
+  "tags": ["synapse"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "graphTooltip": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+
+    {
+      "id": 1,
+      "type": "row",
+      "title": "HTTP Traffic",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+
+    {
+      "id": 2,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (http_target) (rate(http_server_duration_milliseconds_count{job=\"synapse-backend\"}[2m]))",
+          "legendFormat": "{{http_target}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "lineWidth": 2 } }
+      },
+      "options": { "tooltip": { "mode": "multi" } }
+    },
+
+    {
+      "id": 3,
+      "title": "HTTP p95 Latency (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, http_target) (rate(http_server_duration_milliseconds_bucket{job=\"synapse-backend\"}[5m])))",
+          "legendFormat": "p95 {{http_target}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "lineWidth": 2 } }
+      }
+    },
+
+    {
+      "id": 4,
+      "type": "row",
+      "title": "RAG Pipeline",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false
+    },
+
+    {
+      "id": 5,
+      "title": "RAG Step Latency p50 / p95 (s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, step) (rate(synapse_rag_step_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{step}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, step) (rate(synapse_rag_step_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{step}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "lineWidth": 2 } }
+      }
+    },
+
+    {
+      "id": 6,
+      "title": "RAG Completions — Token Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum by (llm_model) (sum_over_time({service_name=\"synapse-backend\"} | json | event=\"rag_pipeline_complete\" | unwrap total_tokens [5m]))",
+          "legendFormat": "total_tokens {{llm_model}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "lineWidth": 2 } }
+      }
+    },
+
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Application Logs",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false
+    },
+
+    {
+      "id": 8,
+      "title": "Request Flow  (knowledge-qa only, excludes infra noise)",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{service_name=\"synapse-backend\"} | json | event =~ \"http_request_started|knowledge_qa_request|sse_stream_started|rag_pipeline_complete|sse_stream_completed|http_request_completed\" | http_path=\"/api/agents/knowledge-qa\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": false,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      }
+    },
+
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Errors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "collapsed": false
+    },
+
+    {
+      "id": 10,
+      "title": "Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_duration_milliseconds_count{job=\"synapse-backend\", http_status_code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx errors/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2 },
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        }
+      }
+    },
+
+    {
+      "id": 11,
+      "title": "Error Logs",
+      "type": "logs",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 30 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{service_name=\"synapse-backend\"} | json | level=\"error\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      }
+    },
+
+    {
+      "id": 12,
+      "type": "row",
+      "title": "OTel Collector Health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "collapsed": true,
+      "panels": [
+        {
+          "id": 13,
+          "title": "Spans Received vs Exported",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 38 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(otelcol_receiver_accepted_spans_total[2m])",
+              "legendFormat": "received",
+              "refId": "A"
+            },
+            {
+              "expr": "rate(otelcol_exporter_sent_spans_total{exporter=\"otlp/tempo\"}[2m])",
+              "legendFormat": "exported → Tempo",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short" } }
+        },
+        {
+          "id": 14,
+          "title": "Log Records Exported → Loki",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 38 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(otelcol_exporter_sent_log_records_total{exporter=\"otlphttp/loki\"}[2m])",
+              "legendFormat": "log records/s",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short" } }
+        }
+      ]
+    }
+
+  ]
+}

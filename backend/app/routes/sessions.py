@@ -1,13 +1,13 @@
 import uuid
-import logging
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from supabase import create_client
 
 from app.config import settings
+from app.telemetry import get_logger
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _supabase = create_client(settings.supabase_url, settings.supabase_anon_key)
 
@@ -30,13 +30,15 @@ async def get_current_session(request: Request):
             .execute()
         )
     except Exception as e:
-        logger.error("Failed to fetch session %s: %s", session_id, e)
+        log.error("session_fetch_failed", error=str(e), exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Database error"})
 
     if not result.data:
         return JSONResponse(status_code=404, content={"detail": "Session not found"})
 
-    return result.data[0]
+    session = result.data[0]
+    log.info("session_fetched", response_payload=session)
+    return session
 
 
 @router.post("")
@@ -52,7 +54,7 @@ async def create_session(response: Response):
         )
         session = result.data[0]
     except Exception as e:
-        logger.error("Failed to create session: %s", e)
+        log.error("session_create_failed", error=str(e), exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Failed to create session"})
 
     response.set_cookie(
@@ -63,6 +65,7 @@ async def create_session(response: Response):
         samesite="lax",
         httponly=False,  # FE can read for debug display
     )
+    log.info("session_created", response_payload=session)
     return session
 
 
@@ -72,9 +75,10 @@ async def delete_session(session_id: str, response: Response):
     try:
         _supabase.table("sessions").delete().eq("id", session_id).execute()
     except Exception as e:
-        logger.error("Failed to delete session %s: %s", session_id, e)
+        log.error("session_delete_failed", session_id=session_id, error=str(e), exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Failed to delete session"})
 
     # Clear cookie if it matches the deleted session
     response.delete_cookie(key=COOKIE_NAME, path="/")
+    log.info("session_deleted", deleted_session_id=session_id)
     return Response(status_code=204)

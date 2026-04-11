@@ -39,14 +39,12 @@ export function useAgentStream(endpoint: string): UseAgentStreamReturn {
 
   const start = useCallback(
     (query: string, filters?: Record<string, string>) => {
-      // Clear any existing surfaces so createSurface doesn't throw on re-query
-      for (const id of [...processor.model.surfacesMap.keys()]) {
-        processor.model.deleteSurface(id);
-      }
+      // Each turn uses a unique surface_id (passed in filters) so surfaces
+      // accumulate in the processor for multi-turn display. No clearing here.
       const params = new URLSearchParams({ query, ...filters });
       startSSE(`${endpoint}?${params.toString()}`);
     },
-    [endpoint, startSSE, processor]
+    [endpoint, startSSE]
   );
 
   // Full volatile session reset: clear all surfaces when the app unmounts (route change)

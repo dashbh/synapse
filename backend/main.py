@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from supabase import create_client
 
-from app.routes import knowledge_qa, ingest
+from app.routes import knowledge_qa, ingest, sessions
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -21,12 +21,14 @@ _cors_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_methods=["POST", "GET", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
 app.include_router(knowledge_qa.router, prefix="/api/agents")
 app.include_router(ingest.router, prefix="/api/agents")
+app.include_router(sessions.router, prefix="/api/sessions")
 
 
 @app.get("/health")

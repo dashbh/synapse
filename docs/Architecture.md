@@ -1,7 +1,7 @@
 # A2UIPlatform Architecture Overview
 
-**Last Updated:** April 10, 2026  
-**Status:** v1.0 complete — FE, BE, and Infra all implemented and operational
+**Last Updated:** April 11, 2026  
+**Status:** v1.1 "Persistence & Precision" — Session persistence + multi-turn Q&A implemented; hybrid search and Architect's Triad planned
 
 ---
 
@@ -16,10 +16,11 @@
 │  │  │ PlatformShell (Nav + Surface Area)              │   │   │
 │  │  ├──────────────────────────────────────────────────┤   │   │
 │  │  │ Active App: KnowledgeQAApp                       │   │   │
-│  │  │ ├─ QueryInput (textarea)                        │   │   │
-│  │  │ └─ A2UISurface (MessageProcessor → React)       │   │   │
-│  │  │     └─ ComponentHost (type → component mapper)  │   │   │
-│  │  │        └─ Catalog (Text/Card/Button/Badge/...)  │   │   │
+│  │  │ ├─ DocumentDrawer (left sidebar, w-12↔w-80)    │   │   │
+│  │  │ ├─ QueryInput (textarea) + ThinkingIndicator    │   │   │
+│  │  │ └─ TurnView[] (one per query, latest on top)    │   │   │
+│  │  │     └─ SurfaceView (surfaceId scoped)           │   │   │
+│  │  │         └─ ComponentHost → Catalog components  │   │   │
 │  │  └──────────────────────────────────────────────────┘   │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
@@ -33,14 +34,18 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                    BACKEND (Python FastAPI)                     │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ POST /api/agents/knowledge-qa?query=...               │   │
-│  │  1. Validate query + read filter params               │   │
-│  │  2. Stream Message 1: createSurface                   │   │
-│  │  3. OpenAI: embed query (text-embedding-ada-002)      │   │
-│  │  4. Supabase pgvector: similarity search              │   │
-│  │  5. OpenAI gpt-4o-mini: generate answer from context  │   │
-│  │  6. Stream Message 2: updateComponents                │   │
-│  │  7. Close SSE stream                                  │   │
+│  │ POST /api/agents/knowledge-qa (query + session_id + surface_id) │
+│  │  1. Validate query; read session_id + surface_id from params │
+│  │  2. Stream Message 1: createSurface(surface_id)       │   │
+│  │  3. PARALLEL: embed query + fetch last 10 history msgs│   │
+│  │  4. pgvector similarity search (match_document_chunks)│   │
+│  │  5. Filter chunks below MIN_SIMILARITY threshold      │   │
+│  │  6. Build prompt with history block prepended         │   │
+│  │  7. OpenAI gpt-4o-mini: generate answer               │   │
+│  │  8. Stream Message 2: updateComponents(surface_id)    │   │
+│  │  9. Background task: store_messages(session_id, ...)  │   │
+│  │  10. Close SSE stream                                 │   │
+│  │  [Phase 2] RRF hybrid search + Architect's Triad      │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
          │
@@ -50,9 +55,12 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                    DATA LAYER (Supabase — hosted)               │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ pgvector embeddings table                              │   │
+│  │ pgvector embeddings table (document_chunks)            │   │
+│  │   └─ GIN index on tsvector column (FTS)               │   │
 │  │ documents table (title, excerpt, source)              │   │
-│  │ Semantic search via koalas library                    │   │
+│  │ sessions table (id, name, created_at, updated_at)     │   │
+│  │ messages table (id, session_id, role, a2ui_payload)   │   │
+│  │ Hybrid search: pgvector similarity + FTS via GIN      │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -72,7 +80,7 @@ flowchart TB
 
     subgraph cloud["Cloud Services"]
         oai["OpenAI API\ntext-embedding-ada-002 · gpt-4o-mini"]
-        sb["Supabase (hosted)\nPostgreSQL + pgvector"]
+        sb["Supabase (hosted)\nPostgreSQL + pgvector + FTS (GIN)\nsessions · messages · document_chunks"]
     end
 
     ui <-->|"HTTP / SSE stream"| fe
@@ -81,7 +89,7 @@ flowchart TB
     be <-->|"vector search · insert chunks"| sb
 ```
 
-### Query Flow
+### Query Flow (v1.1 — Hybrid Search + Session Context)
 
 ```mermaid
 sequenceDiagram
@@ -89,19 +97,31 @@ sequenceDiagram
     participant FE as Next.js
     participant BE as FastAPI
     participant OAI as OpenAI
-    participant DB as Supabase pgvector
+    participant DB as Supabase (pgvector + FTS)
 
-    User->>FE: POST /api/agents/knowledge-qa?query=...
+    User->>FE: POST /api/agents/knowledge-qa (query + session_id)
     FE->>BE: proxy
     BE-->>FE: ① createSurface (A2UI v0.9)
     BE->>OAI: embed(query) — text-embedding-ada-002
     OAI-->>BE: vector[1536]
-    BE->>DB: match_document_chunks(vector, k=5, threshold=0.78)
-    DB-->>BE: relevant chunks
-    BE->>OAI: chat.complete(prompt + chunks) — gpt-4o-mini
-    OAI-->>BE: answer text
+
+    par Parallel Retrieval
+        BE->>DB: vector_search(vector, k=10, threshold=0.78)
+        DB-->>BE: semantic_results[]
+    and
+        BE->>DB: fts_search(tsquery, k=10) via GIN index
+        DB-->>BE: keyword_results[]
+    end
+
+    BE->>BE: RRF merge(semantic_results, keyword_results) → top_k=5
+    BE->>DB: fetch last 10 messages WHERE session_id=X
+    DB-->>BE: conversation_history[]
+    BE->>OAI: chat.complete(history + merged_chunks + query) — gpt-4o-mini
+    OAI-->>BE: answer text (Architect's Triad format)
+    BE->>DB: INSERT message (session_id, role=assistant, a2ui_payload)
     BE-->>FE: ② updateComponents (A2UI v0.9)
-    FE-->>User: answer + source cards rendered
+    FE->>DB: persist user message (session_id, role=user, query)
+    FE-->>User: Triad answer (Blueprint · Ripple · Boundary) + source cards
 ```
 
 ### Ingestion Flow
@@ -186,24 +206,23 @@ App Root (Next.js)
    └─ Set status → STREAMING
    ↓
 3. useAgentStream opens stream (fetch POST + ReadableStream)
-   └─ Connects to: POST /api/agents/knowledge-qa?query=...
+   └─ Connects to: POST /api/agents/knowledge-qa?query=...&surface_id=qa-turn-<uuid>&session_id=<uuid>
    ↓
 4. MessageProcessor receives messages (in order):
    │
    ├─ Message 1: createSurface
-   │  └─ Registers: surfaceId="qa-result", catalogId="stub"
+   │  └─ Registers: surfaceId="qa-turn-<uuid>", catalogId="stub"
    │
    └─ Message 2: updateComponents
-      └─ Defines: [answer-label, answer-body, sources-label, sources-list]
-         with final answer text + source objects
+      └─ Defines: [answer-label, answer-body, meta-info, sources-list]
+         with final answer text + source objects (no sources-label — rendered by SourceListComponent)
    ↓
-5. A2UISurface re-renders from processor state
-   ├─ ComponentHost resolves types to React components
-   ├─ Each component gets props from processor
+5. TurnView (per query) subscribes to its surfaceId via onSurfaceCreated
+   ├─ SurfaceView renders when surface arrives
    ├─ Catalog components render with design tokens
-   └─ User sees: Answer text + Source cards
+   └─ User sees: latest turn at top; all prior turns below
    ↓
-6. Stream closes
+6. Stream closes; store_messages() fires as background task
    └─ Status → DONE
 ```
 
@@ -351,6 +370,180 @@ Rendered HTML with design token styling
 
 ---
 
+## 3. v1.1 Feature Architecture
+
+### 3.1 Session Persistence
+
+#### Supabase Schema
+
+```sql
+-- Session metadata
+CREATE TABLE sessions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT NOT NULL DEFAULT 'New Session',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Full A2UI message log (one row per turn)
+CREATE TABLE messages (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id  UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content     TEXT,            -- raw query text (user turns)
+  a2ui_payload JSONB,          -- full A2UI updateComponents payload (assistant turns)
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_messages_session ON messages(session_id, created_at);
+```
+
+#### Hydration Process
+
+When a user reopens a session the frontend reconstructs the full surface from stored JSON:
+
+```
+Session selected by user
+  ↓
+FE: GET /api/sessions/{session_id}/messages
+  ↓
+BE: SELECT * FROM messages WHERE session_id = X ORDER BY created_at ASC
+  ↓
+FE: for each assistant message
+      MessageProcessor.process(message.a2ui_payload)   ← replay stored A2UI JSONL
+  ↓
+A2UISurface re-renders each turn in sequence
+  ↓
+User sees full conversation history, fully styled (design tokens applied)
+```
+
+**Key constraint (A2UI v0.9):** Hydration replays the stored `updateComponents` payloads through MessageProcessor. The UI is reconstructed from protocol messages, not raw text — ensuring design-token styling is preserved exactly as at query time.
+
+**Context window:** The backend sends only the **last 10 messages** as LLM history to bound token usage. All messages are stored in full but only the recent window is included in the prompt.
+
+---
+
+### 3.2 Hybrid Search (Retrieval)
+
+#### Why Hybrid Search?
+
+Pure vector search misses exact-match technical terms (acronyms, model names, version strings) where keyword frequency matters more than semantic proximity. Hybrid search combines both signals before the LLM sees any context.
+
+#### Supabase FTS Setup
+
+```sql
+-- Add FTS column to document_chunks
+ALTER TABLE document_chunks
+  ADD COLUMN fts_vector TSVECTOR
+    GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
+
+-- GIN index for fast full-text queries
+CREATE INDEX idx_chunks_fts ON document_chunks USING GIN(fts_vector);
+```
+
+#### Hybrid Search RPC
+
+```sql
+-- Supabase RPC: hybrid_search_chunks
+CREATE OR REPLACE FUNCTION hybrid_search_chunks(
+  query_text    TEXT,
+  query_vector  VECTOR(1536),
+  match_count   INT DEFAULT 10
+)
+RETURNS TABLE (
+  id            UUID,
+  content       TEXT,
+  metadata      JSONB,
+  vector_rank   INT,
+  fts_rank      INT
+)
+LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN QUERY
+  WITH vector_hits AS (
+    SELECT id,
+           ROW_NUMBER() OVER (ORDER BY embedding <#> query_vector) AS rank
+    FROM document_chunks
+    ORDER BY embedding <#> query_vector
+    LIMIT match_count
+  ),
+  fts_hits AS (
+    SELECT id,
+           ROW_NUMBER() OVER (ORDER BY ts_rank(fts_vector, query) DESC) AS rank
+    FROM document_chunks,
+         plainto_tsquery('english', query_text) query
+    WHERE fts_vector @@ query
+    ORDER BY ts_rank(fts_vector, query) DESC
+    LIMIT match_count
+  )
+  SELECT dc.id, dc.content, dc.metadata,
+         COALESCE(vh.rank, match_count + 1)::INT AS vector_rank,
+         COALESCE(fh.rank, match_count + 1)::INT AS fts_rank
+  FROM document_chunks dc
+  LEFT JOIN vector_hits vh ON dc.id = vh.id
+  LEFT JOIN fts_hits    fh ON dc.id = fh.id
+  WHERE vh.id IS NOT NULL OR fh.id IS NOT NULL;
+END;
+$$;
+```
+
+#### Reciprocal Rank Fusion (RRF) — Python
+
+```python
+# agents/knowledge_qa_agent.py
+RRF_K = 60  # dampening constant
+
+def rrf_merge(rows: list[dict], top_k: int = 5) -> list[dict]:
+    """Fuse vector and FTS ranked lists using Reciprocal Rank Fusion."""
+    scored = []
+    for row in rows:
+        score = (1 / (RRF_K + row["vector_rank"])) + \
+                (1 / (RRF_K + row["fts_rank"]))
+        scored.append({**row, "rrf_score": score})
+    scored.sort(key=lambda x: x["rrf_score"], reverse=True)
+    return scored[:top_k]
+```
+
+**Flow:** `hybrid_search_chunks` RPC → Python `rrf_merge()` → top-5 chunks passed to `gpt-4o-mini`.
+
+---
+
+### 3.3 The Architect's Triad (Synthesizer Format)
+
+All Knowledge-QA answers are structured as a three-part format. The LLM is prompted to produce this layout; the backend maps each section to an A2UI component tree.
+
+| Section | Label | Purpose |
+|---|---|---|
+| **The Blueprint** | Core Concept | What the thing *is* — the canonical, precise definition |
+| **The Systemic Ripple** | Architectural Impact | How it interacts with and changes surrounding systems |
+| **The Boundary Condition** | Constraints & Trade-offs | Where it breaks down, what it can't do, its known limits |
+
+**A2UI mapping (inside `updateComponents`):**
+
+```
+[TextComponent h2]  "The Blueprint"
+[MarkdownComponent] <core concept text>
+[TextComponent h2]  "The Systemic Ripple"
+[MarkdownComponent] <architectural impact text>
+[TextComponent h2]  "The Boundary Condition"
+[MarkdownComponent] <constraints text>
+[SourceListComponent] sources[]
+```
+
+**LLM system prompt fragment:**
+
+```
+Structure every answer using exactly these three sections:
+## The Blueprint
+<Precise definition and core concept. No padding.>
+## The Systemic Ripple
+<How this concept propagates through surrounding architecture, data flows, or dependencies.>
+## The Boundary Condition
+<Where this breaks down. Hard limits, known failure modes, and trade-off decisions.>
+```
+
+---
+
 ## 3. Backend Architecture (v1 — Implemented)
 
 ### Request/Response Contract
@@ -362,8 +555,8 @@ Response:
 Content-Type: text/plain; charset=utf-8
 Cache-Control: no-cache, no-store
 
-Message 1: {"version":"v0.9","createSurface":{"surfaceId":"qa-result","catalogId":"stub"}}
-Message 2: {"version":"v0.9","updateComponents":{"surfaceId":"qa-result","components":[...]}}
+Message 1: {"version":"v0.9","createSurface":{"surfaceId":"qa-turn-<uuid>","catalogId":"stub"}}
+Message 2: {"version":"v0.9","updateComponents":{"surfaceId":"qa-turn-<uuid>","components":[...]}}
 
 Stream closes after Message 2.
 ```
@@ -375,7 +568,10 @@ Stream closes after Message 2.
 - **Framework:** FastAPI + uvicorn
 - **Embedding:** OpenAI `text-embedding-ada-002` (1536-dim)
 - **Vector Store:** Supabase pgvector (`match_document_chunks` RPC)
+- **Full-Text Search:** Supabase PostgreSQL FTS via GIN index on `tsvector` column
+- **Retrieval:** Hybrid search RPC (`hybrid_search_chunks`) + RRF merge in Python
 - **LLM:** OpenAI `gpt-4o-mini` via OpenAI SDK
+- **Session Store:** Supabase `sessions` + `messages` tables (JSONB payload)
 - **Proxy:** Next.js route handler proxies to FastAPI when `BACKEND_URL` is set
 
 ### Integration: Next.js → FastAPI
@@ -397,10 +593,11 @@ backend/
 │   ├── config.py                Env var loading
 │   ├── a2ui/messages.py         A2UI v0.9 message builders
 │   └── routes/
-│       ├── knowledge_qa.py      POST /api/agents/knowledge-qa
+│       ├── knowledge_qa.py      POST /api/agents/knowledge-qa (+ session_id)
+│       ├── sessions.py          GET/POST/DELETE /api/sessions
 │       └── ingest.py            POST /api/agents/ingest
 └── agents/
-    ├── knowledge_qa_agent.py    Embed → similarity search → chat → sources
+    ├── knowledge_qa_agent.py    Embed → hybrid_search_chunks → RRF → history → chat → Triad
     └── ingest_agent.py          Parse → chunk → embed → store (SSE progress)
 ```
 
@@ -442,10 +639,11 @@ docker compose -f infra/docker-compose.yml --profile dev up --build
 
 ## 5. Communication Contracts
 
-### FE → BE (v1: FastAPI with mock fallback)
+### FE → BE (v1.1: FastAPI with session support)
 
 **Input (URL query params):**
 - `query` (string, required)
+- `session_id` (UUID string, optional — omit to start a new session)
 - `category` (string, optional)
 - `dateFrom` (string, optional, YYYY-MM-DD)
 - `dateTo` (string, optional, YYYY-MM-DD)
@@ -528,7 +726,7 @@ See [Contracts.md §6](Contracts.md) for backend error shapes and [Governance.md
 
 ---
 
-## 9. v1 Status & Next Priorities
+## 9. Version Status & Next Priorities
 
 ### v1.0 — Complete ✅
 
@@ -537,19 +735,28 @@ See [Contracts.md §6](Contracts.md) for backend error shapes and [Governance.md
 - [x] **DB:** Supabase operational — pgvector, `document_chunks` table, `match_document_chunks` RPC
 - [x] **Infra:** Docker Compose (`dev` + `prod` profiles), multi-stage Dockerfiles
 
+### v1.1 — "Persistence & Precision" (In Progress)
+
+- [ ] **Session Persistence:** `sessions` + `messages` tables; create/name/delete sessions; 10-message context window
+- [ ] **Session Hydration:** FE replays stored `a2ui_payload` through MessageProcessor on session resume
+- [ ] **Hybrid Search:** GIN FTS index on `document_chunks.fts_vector`; `hybrid_search_chunks` RPC; Python RRF merge
+- [ ] **Architect's Triad:** LLM prompt template + A2UI component mapping for Blueprint/Ripple/Boundary format
+- [ ] **Sessions API:** `GET/POST/DELETE /api/sessions` endpoints
+
 ### v2.0 — Next
 
 - [ ] **Reflexive-Brain app** — quick capture, global search, agentic triage
 - [ ] **Auth:** Real OAuth/SAML replacing the v1 bypass on `/ingest`
-- [ ] **Session Hydration** — persist conversations across refreshes
 - [ ] **Implicit Ingestion** — automated watcher for cloud/local folder sync
 
 **Architecture decisions (locked):**
 - LLM: OpenAI `gpt-4o-mini`
 - Embeddings: OpenAI `text-embedding-ada-002`
-- Vector store: Supabase pgvector
+- Vector store: Supabase pgvector + FTS (GIN)
+- Retrieval: Hybrid search (RRF fusion)
 - Orchestration: Direct SDK calls (no LangChain)
 - Transport: SSE over plain fetch (no WebSocket)
+- Session storage: Supabase PostgreSQL (JSONB payloads)
 
 ---
 

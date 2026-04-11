@@ -1,3 +1,4 @@
+import json
 import uuid
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
@@ -37,7 +38,7 @@ async def get_current_session(request: Request):
         return JSONResponse(status_code=404, content={"detail": "Session not found"})
 
     session = result.data[0]
-    log.info("session_fetched", response_payload=session)
+    log.info("session_fetched", response_payload=json.dumps(session))
     return session
 
 
@@ -65,7 +66,7 @@ async def create_session(response: Response):
         samesite="lax",
         httponly=False,  # FE can read for debug display
     )
-    log.info("session_created", response_payload=session)
+    log.info("session_created", response_payload=json.dumps(session))
     return session
 
 

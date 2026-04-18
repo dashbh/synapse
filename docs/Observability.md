@@ -1,41 +1,46 @@
 # Observability Guide — Synapse Platform
 
 **Stack:** OpenTelemetry · structlog · Grafana · Tempo · Loki · Prometheus  
-**Last Updated:** April 2026
+**Last Updated:** April 2026  
+**Coverage:** Backend (BE) + Frontend (FE) — both signal sources active
 
 ---
 
 ## 1. Stack Overview
 
-| Signal | What it captures | Collected by | Stored in | Queried via |
+| Signal | Source | Collected by | Stored in | Queried via |
 |---|---|---|---|---|
-| **Traces** | Every RAG pipeline step, HTTP request, span hierarchy | OTel SDK (FastAPI + manual spans) | Grafana Tempo | Grafana → Explore → Tempo |
-| **Logs** | Every `log.info/error()` call, structured JSON with `trace_id` | structlog → stdlib → OTel LoggingInstrumentor | Grafana Loki | Grafana → Explore → Loki |
-| **Metrics** | RAG step latency histograms, request counts | OTel MeterProvider → Prometheus scrape | Prometheus | Grafana → Explore → Prometheus |
+| **Traces** | BE: every RAG step, HTTP request | OTel SDK (FastAPI auto + manual spans) | Grafana Tempo | Grafana → Explore → Tempo |
+| **Logs (BE)** | BE: every `log.info/error()` call | structlog → stdlib → OTELHandler → OTLP gRPC | Grafana Loki | Grafana → Explore → Loki |
+| **Logs (FE)** | FE: stream lifecycle, session events, queries, ingest steps, errors | `createLogger()` → `sendBeacon` → `/api/telemetry/log` → OTLP HTTP | Grafana Loki | Grafana → Explore → Loki |
+| **Metrics** | BE: RAG step latency histograms, HTTP counts | OTel MeterProvider → Prometheus scrape | Prometheus | Grafana → Explore → Prometheus |
 
 ### Data flow
 
 ```
-Browser
-  │ generates W3C traceparent header
+Browser (FE)
+  │ 1. Generates W3C traceparent header per stream request
+  │ 2. Sends structured log events via navigator.sendBeacon → /api/telemetry/log
   ▼
-Next.js proxy (/api/agents/*)
+Next.js proxy layer (FE API routes — server-side)
   │ forwards traceparent upstream; relays X-Trace-ID downstream
+  │ writes JSON logs to stdout + forwards to OTel Collector directly
   ▼
-FastAPI backend
+FastAPI backend (BE)
   ├── FastAPIInstrumentor → HTTP root span (child of browser trace)
-  ├── structlog JSON logs → stdlib → OTELHandler → OTLP gRPC
+  ├── structlog JSON logs → stdlib → OTELHandler → OTLP gRPC (port 4317)
   ├── RAG spans: embed_query → hybrid_retrieval → llm_completion → stream_response
-  └── /metrics endpoint → Prometheus histogram per step
+  └── /metrics endpoint → Prometheus histogram per RAG step
   ▼
 OTel Collector (port 4317 gRPC / 4318 HTTP)
-  ├── traces  → Grafana Tempo  (port 3200)
-  └── logs    → Grafana Loki   (port 3100)
+  ├── traces → Grafana Tempo  (port 3200)
+  └── logs   → Grafana Loki   (port 3100)
+              (both synapse-backend and synapse-frontend stream labels)
   ▼
 Grafana (port 3001)
-  ├── Tempo datasource  → trace waterfall
-  ├── Loki datasource   → structured JSON logs + trace_id link
-  └── Prometheus datasource → latency histograms + exemplars
+  ├── Tempo datasource  → trace waterfall (BE spans)
+  ├── Loki datasource   → structured JSON logs from BE + FE, cross-linked by trace_id
+  └── Prometheus datasource → latency histograms + exemplars → trace jump
 ```
 
 ---
@@ -89,6 +94,10 @@ curl -s http://localhost:8888/metrics | grep otelcol_receiver_accepted_spans_tot
 # 5. Backend metrics endpoint is live
 curl -s http://localhost:8000/metrics | grep synapse_rag
 # Expected: synapse_rag_step_duration_seconds_* lines
+
+# 6. FE logs are reaching Loki (check after submitting a query in the app)
+# Open Grafana → Explore → Loki → {service_name="synapse-frontend"}
+# Expected: log lines with namespace, level, message fields
 ```
 
 ---
@@ -97,7 +106,8 @@ curl -s http://localhost:8000/metrics | grep synapse_rag
 
 Every query you submit in the app generates:
 - 1 HTTP span + 4 child spans (traces → Tempo)
-- Structured JSON log lines with `trace_id` (logs → Loki)
+- Structured JSON log lines from the backend with `trace_id` (logs → Loki, `service_name=synapse-backend`)
+- Structured JSON log lines from the frontend with `session_id` (logs → Loki, `service_name=synapse-frontend`)
 - Histogram observations for each RAG step (metrics → Prometheus)
 
 ```bash
@@ -168,24 +178,22 @@ POST /api/agents/knowledge-qa          ~1.5s  ← HTTP root span
 
 ---
 
-## 6. Checking Logs (Grafana → Loki)
+## 6. Checking Backend Logs (Grafana → Loki)
 
-Logs are structured JSON. Every log line that was emitted during an active OTel span includes `trace_id` and `span_id`, which Grafana renders as a clickable "View Trace in Tempo" link.
+Backend logs are structured JSON. Every log line emitted during an active OTel span includes `trace_id` and `span_id`, which Grafana renders as a clickable **"View Trace in Tempo"** link.
 
 ### Step-by-step
 
 1. Open **http://localhost:3001** → **Explore**
 2. Datasource dropdown → select **Loki**
-3. Click **Label browser**
-4. Select `service_name` → `synapse-backend` → **Show logs**
-5. Or type directly in the query box:
+3. Query:
 
 ```logql
 {service_name="synapse-backend"}
 ```
 
-6. Click any log line to expand it
-7. Look for the **"View Trace in Tempo"** button — click it to jump to the matching trace
+4. Click any log line to expand it
+5. Look for the **"View Trace in Tempo"** button — click it to jump to the matching trace
 
 ### Useful LogQL queries
 
@@ -209,9 +217,7 @@ Logs are structured JSON. Every log line that was emitted during an active OTel 
 count_over_time({service_name="synapse-backend"} | json | level="error" [1h])
 ```
 
-### Log fields reference
-
-Every log line contains these fields:
+### Backend log fields reference
 
 | Field | Example | Description |
 |---|---|---|
@@ -228,7 +234,103 @@ Every log line contains these fields:
 
 ---
 
-## 7. Checking Metrics (Grafana → Prometheus)
+## 7. Checking Frontend Logs (Grafana → Loki)
+
+Frontend logs are emitted by `createLogger()` in `frontend/src/lib/logger.ts`. Browser events batch via `sendBeacon → /api/telemetry/log → OTel Collector → Loki`. Next.js API route logs write JSON directly to the collector from the server side.
+
+All FE logs carry `service_name=synapse-frontend` as the Loki stream label.
+
+### Step-by-step
+
+1. Open **http://localhost:3001** → **Explore** → **Loki**
+2. Query:
+
+```logql
+{service_name="synapse-frontend"}
+```
+
+3. Expand a log line — FE logs with a `trace_id` field link to the matching backend trace in Tempo
+
+### Key FE log events
+
+| Event name | Namespace | Description |
+|---|---|---|
+| `stream_start` | `fe.transport.sse` | SSE stream initiated (includes `url`) |
+| `stream_connected` | `fe.transport.sse` | Response headers received (includes `trace_id`, `status`) |
+| `stream_complete` | `fe.transport.sse` | Stream finished successfully (includes `duration_ms`) |
+| `stream_error` | `fe.transport.sse` | Stream failed (includes `error`) |
+| `stream_aborted` | `fe.transport.sse` | Stream cancelled (route change or stop) |
+| `session_restored` | `fe.session` | Existing session resumed from cookie |
+| `session_created` | `fe.session` | New session created (first visit) |
+| `session_new` | `fe.session` | User explicitly started a new chat |
+| `session_switch` | `fe.session` | Switched to a different session |
+| `session_init_failed` | `fe.session` | Session init failed — app continues stateless |
+| `query_submit` | `fe.app.knowledge-qa` | User submitted a query (includes `session_id`, `query_length`, `turn`) |
+| `session_hydrate_start` | `fe.app.knowledge-qa` | Session history load started |
+| `session_hydrate_complete` | `fe.app.knowledge-qa` | Session history loaded (includes `turns` count) |
+| `session_hydrate_failed` | `fe.app.knowledge-qa` | Session history load failed |
+| `session_new_chat` | `fe.app.knowledge-qa` | New chat button triggered |
+| `ingest_start` | `fe.ingest` | File upload initiated (includes `file_name`, `file_size`) |
+| `ingest_step` | `fe.ingest` | Ingestion pipeline step updated (includes `step`, `status`) |
+| `ingest_complete` | `fe.ingest` | Ingestion finished successfully |
+| `ingest_unauthorized` | `fe.ingest` | 401/403 on ingest — auth failure |
+| `query_proxy` | `fe.api.knowledge-qa` | Server-side proxy forwarded query to BE |
+| `session_create` | `fe.api.sessions` | Session creation proxied to BE |
+| `session_rename` | `fe.api.sessions` | Session rename proxied to BE |
+| `session_delete` | `fe.api.sessions` | Session delete proxied to BE |
+| `session_activate` | `fe.api.sessions` | Session switch proxied to BE |
+
+### Useful FE LogQL queries
+
+```logql
+# All frontend logs
+{service_name="synapse-frontend"}
+
+# FE errors only
+{service_name="synapse-frontend"} | json | level="error"
+
+# Session lifecycle events
+{service_name="synapse-frontend"} | json | namespace=~"fe\.session.*"
+
+# Query submissions (user activity)
+{service_name="synapse-frontend"} | json | message="query_submit"
+
+# Stream events for a specific session
+{service_name="synapse-frontend"} | json | session_id="<uuid>"
+
+# Count queries submitted per minute
+sum(count_over_time({service_name="synapse-frontend"} | json | message="query_submit" [1m]))
+
+# Ingestion step completions
+{service_name="synapse-frontend"} | json | message="ingest_step" | status="done"
+
+# All FE logs with a backend trace_id (cross-service correlation)
+{service_name="synapse-frontend"} | json | trace_id!=""
+```
+
+### FE log fields reference
+
+| Field | Example | Description |
+|---|---|---|
+| `message` | `stream_complete` | Event name |
+| `level` | `info` / `error` / `warn` | Log level |
+| `namespace` | `fe.transport.sse` | Logger namespace (identifies source layer) |
+| `timestamp` | `2026-04-18T09:12:34Z` | ISO 8601 |
+| `service_name` | `synapse-frontend` | Constant — used as Loki stream label |
+| `session_id` | `uuid` | User session (when available) |
+| `trace_id` | `4bf92f3577b34da6...` | Backend trace ID relayed via `X-Trace-ID` header |
+| `url` | `/api/agents/knowledge-qa?...` | Stream endpoint (on stream events) |
+| `duration_ms` | `1423` | Stream or step duration in milliseconds |
+| `query_length` | `42` | Length of user query |
+| `file_name` | `architecture.pdf` | Uploaded file name (on ingest events) |
+| `file_size` | `204800` | Uploaded file size in bytes |
+| `step` | `chunking` | Ingestion pipeline step name |
+| `status` | `done` / `error` | Step status |
+| `error` | `HTTP 500 ...` | Error message (on error-level logs) |
+
+---
+
+## 8. Checking Metrics (Grafana → Prometheus)
 
 Metrics track aggregate performance over time. Use them to see trends, percentile latencies, and error rates.
 
@@ -288,18 +390,28 @@ The `synapse_rag_step_duration_seconds` histogram has a `step` label:
 | `hybrid_retrieval` | Supabase pgvector RPC (`match_document_chunks`) |
 | `llm_completion` | OpenAI gpt-4o-mini chat completion |
 
-### Checking the raw /metrics output
+---
 
-```bash
-# See all metrics the backend exposes
-curl -s http://localhost:8000/metrics | grep -E "^(synapse|http_server)"
-```
+## 9. Grafana Dashboard: Synapse Observability
+
+The main dashboard at **http://localhost:3001** (Synapse Observability) contains these rows:
+
+| Row | Panels | Data source |
+|---|---|---|
+| **HTTP Traffic** | Request rate, HTTP p95 latency | Prometheus |
+| **RAG Pipeline** | Step latency p50/p95, token usage over time | Prometheus |
+| **Application Logs** | Request flow table (BE logs, excludes infra noise) | Loki |
+| **Errors** | Error rate timeseries, error log lines | Prometheus + Loki |
+| **Frontend** | FE error count, session events, query submissions, stream lifecycle, ingestion steps, FE error logs | Loki |
+| **OTel Collector Health** | Spans/logs received vs exported (collapsed by default) | Prometheus |
+
+The dashboard JSON is at `infra/grafana/dashboards/Synapse_Observability.json` and is provisioned automatically. It auto-reloads every 30 seconds — editing the JSON file and saving is enough to see changes in Grafana.
 
 ---
 
-## 8. End-to-End Correlation: One Request, Three Signals
+## 10. End-to-End Correlation: One Request, Three Signals
 
-This is the power of the unified telemetry stack — a single trace ID links a log line, a trace, and a metric exemplar.
+This is the power of the unified telemetry stack — a single trace ID links a FE log line, a BE trace, and a metric exemplar.
 
 ### Finding the trace ID from the browser
 
@@ -316,18 +428,24 @@ This is the power of the unified telemetry stack — a single trace ID links a l
 TraceQL: { trace:id = "<your-trace-id>" }
 ```
 
-**In Loki:**
+**In Loki (backend):**
 ```logql
 {service_name="synapse-backend"} | json | trace_id="<your-trace-id>"
+```
+
+**In Loki (frontend):**
+```logql
+{service_name="synapse-frontend"} | json | trace_id="<your-trace-id>"
 ```
 
 **In Grafana (shortcut):**
 - In Loki: expand any log line → click **"View Trace in Tempo"**
 - In Tempo: click a span → click **"Related logs in Loki"**
+- The `stream_connected` FE log event carries the backend `trace_id` — this is the cross-service link
 
 ---
 
-## 9. Troubleshooting
+## 11. Troubleshooting
 
 ### No traces appear in Tempo
 
@@ -345,7 +463,7 @@ make logs-be | grep -i "otlp\|exporter\|error"
 curl http://localhost:3200/ready
 ```
 
-### No logs appear in Loki
+### No backend logs appear in Loki
 
 ```bash
 # 1. Check the collector is exporting logs
@@ -359,6 +477,28 @@ make logs-be
 
 # 4. If collector shows 0 log records, the OTel LoggingInstrumentor may not
 #    be wired — check that setup_telemetry() is called before any requests
+```
+
+### No frontend logs appear in Loki
+
+```bash
+# 1. Check the frontend container has OTEL_COLLECTOR_URL set
+make ps  # verify frontend-dev container is running with observability stack
+
+# 2. Check that the FE API route can reach the collector
+make logs-fe | grep "telemetry"
+
+# 3. Try the telemetry route manually (from host with observability stack running)
+curl -X POST http://localhost:3000/api/telemetry/log \
+  -H "Content-Type: application/json" \
+  -d '{"logs": [{"timestamp":"2026-04-18T00:00:00Z","level":"info","namespace":"fe.test","message":"test","service_name":"synapse-frontend"}]}'
+# Expected: 204 No Content
+
+# 4. Loki query to confirm — wait ~30 seconds for ingestion
+# Grafana → Explore → Loki → {service_name="synapse-frontend"}
+
+# 5. Local dev without Docker: browser events go to /api/telemetry/log on Next.js,
+#    but OTEL_COLLECTOR_URL is not set, so logs only appear in console — expected.
 ```
 
 ### No metrics appear in Prometheus
@@ -403,7 +543,7 @@ make dev
 
 ---
 
-## 10. Telemetry Files Reference
+## 12. Telemetry Files Reference
 
 ```
 backend/
@@ -411,19 +551,45 @@ backend/
     ├── __init__.py          Re-exports: setup_telemetry, get_tracer, get_logger
     └── logger.py            OTel providers + structlog chain + stdlib bridge
 
+frontend/src/
+└── lib/
+    └── logger.ts            createLogger() factory — browser + Node.js dual-mode
+frontend/src/app/api/
+└── telemetry/log/
+    └── route.ts             POST handler: browser log batch → OTLP HTTP → Loki
+
 infra/
-├── docker-compose.observability.yml   LGTM services + backend env overrides
+├── docker-compose.observability.yml   LGTM services + backend + frontend env overrides
 ├── otel-collector-config.yaml         OTLP receiver → Tempo + Loki exporters
 ├── tempo-config.yaml                  Tempo: local storage, 72h retention
 ├── loki-config.yaml                   Loki: single-node, zone awareness off
 ├── prometheus.yml                     Scrape: /metrics + collector self-metrics
-└── grafana/provisioning/
-    └── datasources/lgtm.yaml          Loki + Tempo + Prometheus auto-provisioned
-                                       with cross-linking (log→trace, trace→log)
+└── grafana/
+    ├── provisioning/datasources/
+    │   └── lgtm.yaml        Loki + Tempo + Prometheus auto-provisioned with cross-linking
+    └── dashboards/
+        └── Synapse_Observability.json   Main dashboard (BE + FE rows, auto-reloads 30s)
 
 Makefile (repo root)
   make dev          Start everything including observability
   make logs-be      Tail backend logs
+  make logs-fe      Tail frontend logs
   make logs-obs     Tail otel-collector + loki + tempo + grafana logs
   make ps           Container status
 ```
+
+---
+
+## 13. Logger Namespace Reference (FE)
+
+The FE logger uses dot-separated namespaces. Filter by prefix in Loki using `namespace=~"fe\.transport\.*"`.
+
+| Namespace | File | What it covers |
+|---|---|---|
+| `fe.transport.sse` | `src/a2ui/transport/useSSE.ts` | SSE stream start/connected/complete/error/aborted |
+| `fe.transport.agent` | `src/a2ui/transport/useAgentStream.ts` | Agent stream start, parse errors, stream errors |
+| `fe.session` | `src/apps/knowledge-qa/hooks/useSession.ts` | Session create/restore/switch lifecycle |
+| `fe.app.knowledge-qa` | `src/apps/knowledge-qa/KnowledgeQAApp.tsx` | Query submit, hydration, new chat, session switch |
+| `fe.ingest` | `src/apps/knowledge-qa/hooks/useIngestionStream.ts` | File upload, pipeline steps, completion |
+| `fe.api.knowledge-qa` | `src/app/api/agents/knowledge-qa/route.ts` | Query proxy calls to BE |
+| `fe.api.sessions` | `src/app/api/sessions/` (all routes) | Session CRUD proxy calls to BE |

@@ -2,6 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { StreamStatus } from './types';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('fe.transport.sse');
 
 export interface UseSSEOptions {
   onMessage: (line: string) => void;
@@ -48,12 +51,9 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
     setStatus(StreamStatus.STREAMING);
 
     (async () => {
+      const startMs = Date.now();
+      log.info('stream_start', { url });
       try {
-        // Generate a W3C traceparent header for this stream request so the
-        // backend can attach its spans as children of this frontend-originated
-        // trace. Format: "00-{32hex traceId}-{16hex spanId}-01"
-        // crypto.randomUUID() is available natively in all modern browsers and
-        // Node.js 19+ (Next.js server-side) — no extra dependencies needed.
         const traceId = crypto.randomUUID().replace(/-/g, '');
         const spanId = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
         const traceparent = `00-${traceId}-${spanId}-01`;
@@ -65,8 +65,6 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
           headers: { traceparent },
         });
 
-        // Capture the backend's confirmed trace ID (may differ from the
-        // frontend-generated one if the backend creates its own root span).
         const backendTraceId = response.headers.get('X-Trace-ID');
         if (backendTraceId) {
           optionsRef.current.onTraceId?.(backendTraceId);
@@ -79,6 +77,9 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
           throw new Error('Response has no body');
         }
 
+        const streamLog = log.child({ trace_id: backendTraceId ?? traceId });
+        streamLog.info('stream_connected', { status: response.status });
+
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -89,7 +90,6 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
-          // Keep the last partial line in the buffer
           buffer = lines.pop() ?? '';
 
           for (const line of lines) {
@@ -98,14 +98,18 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
           }
         }
 
-        // Flush any remaining content after stream closes
         const remaining = buffer.trim();
         if (remaining) optionsRef.current.onMessage(remaining);
 
+        streamLog.info('stream_complete', { duration_ms: Date.now() - startMs });
         optionsRef.current.onDone?.();
         setStatus(StreamStatus.DONE);
       } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
+        if ((err as Error).name === 'AbortError') {
+          log.info('stream_aborted', { url, duration_ms: Date.now() - startMs });
+          return;
+        }
+        log.error('stream_error', { url, error: (err as Error).message, duration_ms: Date.now() - startMs });
         optionsRef.current.onError?.(err as Error);
         setStatus(StreamStatus.ERROR);
       } finally {

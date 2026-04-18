@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Menu, SquarePen, Files, BookOpen } from 'lucide-react';
+import { Menu, SquarePen, Files, BookOpen, History } from 'lucide-react';
 import { useDrawer } from '../context/DrawerContext';
 import { IngestionPanel } from './IngestionPanel';
+import { SessionSwitcher } from './SessionSwitcher';
 import { ConfidenceBadge } from '@/a2ui/catalog/components/ConfidenceBadge';
 
 // ---------------------------------------------------------------------------
@@ -125,10 +126,10 @@ function SourceSkeleton() {
 // DocumentDrawer
 // ---------------------------------------------------------------------------
 
-export function DocumentDrawer() {
+export function DocumentDrawer({ activeSessionId }: { activeSessionId: string | null }) {
   const {
     isOpen, activeTab, sources, activeCitationIndex,
-    documentCount, toggle, openDocuments, openSources,
+    documentCount, sessionListVersion, toggle, openDocuments, openSources, openSessions,
     triggerNewChat, variant,
   } = useDrawer();
 
@@ -158,9 +159,22 @@ export function DocumentDrawer() {
         </button>
       </div>
 
-      {/* Header row 2: Documents / Sources tab switcher */}
+      {/* Header row 2: Sessions / Documents / Sources tab switcher */}
       <div className="px-3 pb-2 shrink-0 border-b border-[var(--color-neutral-100)]">
         <div className="flex items-center gap-1 rounded-xl bg-[var(--color-neutral-50)] p-1">
+          <button
+            type="button"
+            onClick={openSessions}
+            className={[
+              'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+              activeTab === 'sessions'
+                ? 'bg-white text-[var(--color-primary-700)] shadow-sm cursor-pointer'
+                : 'text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-700)] cursor-pointer',
+            ].join(' ')}
+          >
+            <History className="h-3.5 w-3.5" />
+            <span>Sessions</span>
+          </button>
           <button
             type="button"
             onClick={openDocuments}
@@ -172,7 +186,7 @@ export function DocumentDrawer() {
             ].join(' ')}
           >
             <Files className="h-3.5 w-3.5" />
-            <span>Documents</span>
+            <span>Docs</span>
             {documentCount > 0 && (
               <span className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary-100)] text-[9px] font-bold text-[var(--color-primary-700)]">
                 {documentCount}
@@ -206,6 +220,9 @@ export function DocumentDrawer() {
           <div>
             <IngestionPanel />
           </div>
+        )}
+        {activeTab === 'sessions' && (
+          <SessionSwitcher activeSessionId={activeSessionId} refreshKey={sessionListVersion} />
         )}
         {activeTab === 'sources' && (
           <div className="p-4">

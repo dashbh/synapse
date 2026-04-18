@@ -41,6 +41,19 @@ def _error_components(error_text: str) -> dict:
     }
 
 
+def _on_store_done(task: asyncio.Task) -> None:
+    """Log unhandled exceptions from the background store_messages task."""
+    if task.cancelled():
+        log.warning("store_messages_cancelled")
+    elif exc := task.exception():
+        log.error(
+            "store_messages_task_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
+
+
 async def _stream(
     query: str,
     session_id: str | None,
@@ -113,9 +126,10 @@ async def _stream(
 
             # Persist both turns in the background — don't block the stream
             if session_id:
-                asyncio.create_task(
+                task = asyncio.create_task(
                     asyncio.to_thread(agent.store_messages, session_id, query, payload)
                 )
+                task.add_done_callback(_on_store_done)
         except Exception as exc:
             stream_span.record_exception(exc)
             stream_span.set_status(StatusCode.ERROR, str(exc))

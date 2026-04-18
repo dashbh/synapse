@@ -5,6 +5,9 @@ import { type A2uiMessage } from '@a2ui/web_core/v0_9';
 import { useMessageProcessor } from '@/a2ui/processor/MessageProcessorProvider';
 import { useSSE } from './useSSE';
 import { StreamStatus } from './types';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('fe.transport.agent');
 
 interface UseAgentStreamReturn {
   status: StreamStatus;
@@ -27,13 +30,13 @@ export function useAgentStream(endpoint: string): UseAgentStreamReturn {
           const message = JSON.parse(line) as A2uiMessage;
           processor.processMessages([message]);
         } catch {
-          console.error('[A2UI] Failed to parse message:', line);
+          log.error('parse_error', { line: line.slice(0, 200) });
         }
       },
       [processor]
     ),
     onError: useCallback((err: Error) => {
-      console.error('[A2UI] Stream error:', err.message);
+      log.error('stream_error', { error: err.message });
     }, []),
   });
 
@@ -42,6 +45,7 @@ export function useAgentStream(endpoint: string): UseAgentStreamReturn {
       // Each turn uses a unique surface_id (passed in filters) so surfaces
       // accumulate in the processor for multi-turn display. No clearing here.
       const params = new URLSearchParams({ query, ...filters });
+      log.info('stream_start', { endpoint, query: query.slice(0, 100) });
       startSSE(`${endpoint}?${params.toString()}`);
     },
     [endpoint, startSSE]

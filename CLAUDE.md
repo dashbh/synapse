@@ -104,6 +104,8 @@ Choose **one** layer/role below:
 | **FE: Component APIs** | [docs/FE_Reference.md](docs/FE_Reference.md) |
 | **FE: How-to guides** | [docs/FE_Patterns.md](docs/FE_Patterns.md) |
 | **FE: Current status** | [frontend/README.md](frontend/README.md) § Status |
+| **Observability & logging** | [docs/Observability.md](docs/Observability.md) |
+| **Testing strategy** | [docs/Testing_Strategy.md](docs/Testing_Strategy.md) |
 
 ---
 

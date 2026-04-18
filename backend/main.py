@@ -22,7 +22,7 @@ from app.telemetry import setup_telemetry, get_logger
 from app.routes import knowledge_qa, ingest, sessions
 from app.config import settings
 
-logger = get_logger(__name__)
+log = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -56,7 +56,7 @@ _cors_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_methods=["POST", "GET", "DELETE", "OPTIONS"],
+    allow_methods=["POST", "GET", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
     allow_credentials=True,
     expose_headers=["X-Trace-ID"],  # allow browser JS to read the trace ID
@@ -104,7 +104,7 @@ async def request_context_middleware(request: Request, call_next):
         client_ip=request.client.host if request.client else None,
     )
 
-    logger.info(
+    log.info(
         "http_request_started",
         http_query=str(request.url.query)[:300] if request.url.query else None,
         user_agent=request.headers.get("user-agent", "")[:120],
@@ -125,11 +125,15 @@ async def request_context_middleware(request: Request, call_next):
 
     # For StreamingResponse (SSE), duration_ms is time-to-first-byte, not stream
     # duration. The true end-to-end duration is in sse_stream_completed.duration_ms.
-    logger.info(
+    log.info(
         "http_request_completed",
         http_status=response.status_code,
         duration_ms=duration_ms,
-        is_streaming=response.headers.get("content-type", "").startswith("text/plain"),
+        is_streaming="text/event-stream" in response.headers.get("content-type", "")
+        or (
+            response.headers.get("content-type", "").startswith("text/plain")
+            and response.headers.get("x-accel-buffering") == "no"
+        ),
         response_content_type=response.headers.get("content-type"),
     )
 
@@ -157,20 +161,20 @@ def health():
         if not settings.supabase_url or not settings.supabase_anon_key:
             raise ValueError("Supabase credentials not set")
     except Exception as e:
-        logger.error("health_check_failed", check="api_keys", error=str(e))
+        log.error("health_check_failed", check="api_keys", error=str(e))
         checks["api_keys"] = "error"
 
     try:
         supabase = create_client(settings.supabase_url, settings.supabase_anon_key)
         supabase.table("document_chunks").select("count", count="exact").limit(1).execute()
     except Exception as e:
-        logger.error("health_check_failed", check="database", error=str(e))
+        log.error("health_check_failed", check="database", error=str(e))
         checks["database"] = "error"
 
     if any(v == "error" for v in checks.values()):
         return JSONResponse(status_code=503, content={"status": "unhealthy", "checks": checks})
 
-    logger.info("health_check_ok", checks=checks)
+    log.debug("health_check_ok", checks=checks)
     return {"status": "healthy", "checks": checks}
 
 

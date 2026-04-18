@@ -107,6 +107,37 @@ grafana-export: ## Export all Grafana dashboards to infra/grafana/dashboards/ (r
 	    done
 	@echo "Done. Commit infra/grafana/dashboards/ to git."
 
+# ── Testing ──────────────────────────────────────────────────────────────────
+
+test-e2e: ## Run Playwright E2E tests (requires: npm run dev in frontend/)
+	cd frontend && npm run test:e2e
+
+test-e2e-ui: ## Open Playwright UI mode for interactive test debugging
+	cd frontend && npx playwright test --ui
+
+# ── Load Testing ─────────────────────────────────────────────────────────────
+
+load-test-query: ## k6 RAG query ramp test → Prometheus (requires: make obs && k6 installed)
+	k6 run \
+	  --out experimental-prometheus-rw \
+	  -e K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
+	  -e BASE_URL=http://localhost:3000 \
+	  infra/load-tests/scenarios/rag-query.js
+
+load-test-sessions: ## k6 concurrent sessions test → Prometheus
+	k6 run \
+	  --out experimental-prometheus-rw \
+	  -e K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
+	  -e BASE_URL=http://localhost:3000 \
+	  infra/load-tests/scenarios/concurrent-sessions.js
+
+load-test-ingest: ## k6 ingestion pipeline stress test → Prometheus
+	k6 run \
+	  --out experimental-prometheus-rw \
+	  -e K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
+	  -e BASE_URL=http://localhost:3000 \
+	  infra/load-tests/scenarios/ingest-load.js
+
 # ── Help ─────────────────────────────────────────────────────────────────────
 
 help: ## List all available targets

@@ -42,6 +42,25 @@ CHAT_MODEL = "gpt-4o-mini"
 TOP_K = 5
 MIN_SIMILARITY = 0.75  # chunks below this score are not relevant — raise to tighten, lower to broaden
 
+SYSTEM_PROMPT = """\
+You are a precise technical knowledge assistant. Structure every answer into exactly three sections using these H2 headings, in this order:
+
+## The Blueprint
+The precise core definition or explanation. No padding, no preamble. State exactly what the concept is.
+
+## The Systemic Ripple
+How this concept propagates through surrounding architecture, data flows, or dependent systems. Concrete cause-and-effect chains only.
+
+## The Boundary Condition
+Hard limits, failure modes, edge cases, and trade-off decisions. What breaks, when, and why. Include version constraints or configuration thresholds where relevant.
+
+Rules:
+- Use only the provided sources. Do not invent information.
+- If the sources lack enough detail for a section, write one sentence saying so — do not omit the section.
+- Keep each section tight. Prefer bullet points inside sections over long prose.
+- Inline citation markers [N] must reference the numbered sources exactly as provided.\
+"""
+
 
 def _search_chunks(
     query_embedding: list[float],
@@ -310,8 +329,11 @@ async def run(
         try:
             response = await _openai.chat.completions.create(
                 model=CHAT_MODEL,
-                max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1536,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
             )
             if response.usage:
                 llm_span.set_attribute("gen_ai.usage.input_tokens", response.usage.prompt_tokens)

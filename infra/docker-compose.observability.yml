@@ -103,9 +103,6 @@ services:
     restart: unless-stopped
 
   # ── Backend override: inject OTel env vars ─────────────────────────────────
-  # Extends backend-dev from the base compose without touching its networks.
-  # backend-dev stays on a2uiplatform-net (its default) so frontend-dev can
-  # still reach it. otel-collector reaches backend-dev via the same default net.
   backend-dev:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
@@ -113,6 +110,18 @@ services:
       - SERVICE_VERSION=1.0.0
       - DEPLOYMENT_ENVIRONMENT=development
       - LOG_LEVEL=INFO
+    depends_on:
+      - otel-collector
+
+  # ── Frontend override: add OTel collector URL so API routes can forward logs ─
+  # frontend-dev joins the observability network so it can reach otel-collector
+  # by hostname. OTEL_COLLECTOR_URL is read by /api/telemetry/log route.
+  frontend-dev:
+    environment:
+      - OTEL_COLLECTOR_URL=http://otel-collector:4318
+    networks:
+      - default
+      - observability
     depends_on:
       - otel-collector
 

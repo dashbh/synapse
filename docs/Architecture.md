@@ -622,11 +622,120 @@ backend/
 └── .dockerignore         prod: uvicorn workers, code baked in
 ```
 
-**Usage:**
+**Usage (via Makefile at repo root):**
 ```bash
-cp .env.example .env      # fill in OPENAI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
-docker compose -f infra/docker-compose.yml --profile dev up --build
+cp .env.example .env   # fill in OPENAI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
+
+make dev               # start everything: FE + BE + observability sidecar
+make dev-d             # same but detached (runs in background)
+make down              # stop all containers
+make logs-be           # tail backend logs
+make ps                # show container status
+make help              # list all available targets
 ```
+
+### Service Access URLs
+
+| Service | URL | Notes |
+|---|---|---|
+| **Frontend (Knowledge QA)** | http://localhost:3000 | Next.js app |
+| **Backend API** | http://localhost:8000 | FastAPI — health: `/health` |
+| **Backend Metrics** | http://localhost:8000/metrics | Prometheus scrape endpoint |
+| **Grafana** | http://localhost:3001 | No login — anonymous admin |
+| **Prometheus** | http://localhost:9090 | Metrics + exemplars |
+| **Loki** | http://localhost:3100 | Log aggregation (query via Grafana) |
+| **Tempo** | http://localhost:3200 | Distributed traces (query via Grafana) |
+| **OTel Collector** | http://localhost:8888/metrics | Collector self-metrics |
+
+---
+
+### Observability Stack (v1.1 — Implemented)
+
+The LGTM sidecar is bundled into `make dev` and runs automatically alongside the application.
+
+#### Architecture
+
+```
+Browser (Next.js)
+  │  generates W3C traceparent header per SSE request
+  │  reads X-Trace-ID from response headers
+  ▼
+Next.js API Route (/api/agents/knowledge-qa)
+  │  forwards traceparent upstream
+  │  relays X-Trace-ID downstream
+  ▼
+FastAPI Backend (port 8000)
+  │  FastAPIInstrumentor extracts traceparent → creates root HTTP span
+  │  structlog emits JSON logs with trace_id + span_id on every line
+  │  RAG pipeline: 4 named child spans
+  │    ├─ embed_query       (gen_ai.system=openai, gen_ai.request.model=ada-002)
+  │    ├─ hybrid_retrieval  (db.system=postgresql, synapse.retrieval.chunks_returned=N)
+  │    ├─ llm_completion    (gen_ai.usage.total_tokens=N)
+  │    └─ stream_response   (synapse.response.sources_count=N)
+  │  /metrics endpoint → synapse_rag_step_duration_seconds histogram
+  ▼
+OTel Collector (ports 4317 gRPC / 4318 HTTP)
+  ├─ traces → Grafana Tempo (port 3200)
+  └─ logs   → Grafana Loki  (port 3100)
+  ▼
+Grafana (port 3001)
+  ├─ Explore → Tempo   → trace waterfall for any query
+  ├─ Explore → Loki    → structured JSON logs; click trace_id → jump to Tempo
+  └─ Explore → Prometheus → RAG step latency histogram + exemplars → jump to slow trace
+```
+
+#### Key Files
+
+```
+infra/
+├── docker-compose.observability.yml   LGTM services + backend env var overrides
+├── otel-collector-config.yaml         Receiver (OTLP) → exporters (Tempo + Loki)
+├── tempo-config.yaml                  Tempo: local storage, 72h retention
+├── loki-config.yaml                   Loki: single-node, zone awareness disabled
+├── prometheus.yml                     Scrape: backend /metrics + collector self-metrics
+└── grafana/provisioning/
+    └── datasources/lgtm.yaml          Auto-provisions Loki + Tempo + Prometheus
+                                       with cross-linking (log→trace, trace→log, metric→trace)
+
+backend/
+└── app/telemetry/
+    ├── __init__.py                    Public re-exports
+    └── logger.py                      OTel TracerProvider + LoggerProvider + MeterProvider
+                                       structlog JSON chain + stdlib logging bridge
+```
+
+#### Grafana Quick-Start
+
+1. Open **http://localhost:3001**
+2. Click **Explore** (compass icon, left sidebar)
+3. **Traces:** select *Tempo* datasource → Search → filter `service.name = synapse-backend` → run a query in the app → traces appear in seconds
+4. **Logs:** select *Loki* datasource → Label filter `service_name = synapse-backend` → click any log line → "View Trace in Tempo" link appears inline
+5. **Metrics:** select *Prometheus* datasource → query `synapse_rag_step_duration_seconds_bucket` → view per-step latency histogram
+
+#### Trace Propagation Flow
+
+```
+useSSE.ts (browser)
+  → generates: traceparent: 00-{32hex}-{16hex}-01
+  → fetch POST /api/agents/knowledge-qa
+      ↓
+Next.js proxy
+  → forwards: traceparent header
+  → fetch POST http://backend:8000/api/agents/knowledge-qa
+      ↓
+FastAPI (FastAPIInstrumentor)
+  → extracts traceparent → sets as parent context
+  → creates HTTP root span (child of frontend trace)
+  → all RAG spans are grandchildren of the same trace
+  → response header: X-Trace-ID: {32hex}
+      ↓
+Next.js proxy
+  → relays: X-Trace-ID header back to browser
+      ↓
+useSSE.ts → onTraceId callback fires with confirmed trace ID
+```
+
+**Result:** A single trace ID links the browser request → Next.js proxy → FastAPI HTTP span → embed_query → hybrid_retrieval → llm_completion → stream_response. All visible in one Tempo trace waterfall.
 
 ### Deployment (Future)
 
@@ -734,6 +843,7 @@ See [Contracts.md §6](Contracts.md) for backend error shapes and [Governance.md
 - [x] **BE:** FastAPI, RAG query pipeline, document ingestion pipeline, health endpoint
 - [x] **DB:** Supabase operational — pgvector, `document_chunks` table, `match_document_chunks` RPC
 - [x] **Infra:** Docker Compose (`dev` + `prod` profiles), multi-stage Dockerfiles
+- [x] **Observability:** LGTM sidecar (Loki + Grafana + Tempo + Prometheus), OTel distributed tracing, structlog JSON logging, W3C trace propagation, RAG step histograms
 
 ### v1.1 — "Persistence & Precision" (In Progress)
 

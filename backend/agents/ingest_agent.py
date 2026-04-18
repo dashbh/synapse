@@ -9,20 +9,30 @@ Pipeline (streaming progress via async generator):
   5. Storing  — delete existing chunks for same source_file, insert new ones
 
 Deduplication: uploading the same file name again replaces previous chunks.
+
+Instrumentation:
+  Each pipeline step is a named OTel child span with relevant attributes.
+  Step latencies are recorded in the synapse_ingest_step_duration_seconds histogram.
 """
 
 import asyncio
+import time
 import uuid
 from pathlib import Path
 from typing import AsyncIterator
 
 from openai import AsyncOpenAI
+from opentelemetry.trace import StatusCode
 from supabase import create_client, Client
 
 from app.config import settings
+from app.telemetry import get_logger, get_tracer
 
 _openai = AsyncOpenAI(api_key=settings.openai_api_key)
 _supabase: Client = create_client(settings.supabase_url, settings.supabase_anon_key)
+
+tracer = get_tracer(__name__)
+log = get_logger(__name__)
 
 EMBEDDING_MODEL = "text-embedding-ada-002"
 CHUNK_SIZE = 1500   # characters
@@ -164,48 +174,159 @@ async def run(
       {"step": str, "status": "idle"|"in_progress"|"done"|"error", "message": str}
 
     Raises after yielding an error message so the route can log it.
+
+    Each pipeline step is wrapped in a named OTel child span. Step durations
+    are logged as structured events for Loki correlation.
     """
     batch_id = str(uuid.uuid4())
-    file_mb = f"{len(content) / 1024 / 1024:.1f}"
+    file_size_bytes = len(content)
+    file_mb = f"{file_size_bytes / 1024 / 1024:.1f}"
+    t_pipeline = time.perf_counter()
+
+    log.info(
+        "ingest_pipeline_started",
+        batch_id=batch_id,
+        filename=filename,
+        file_size_bytes=file_size_bytes,
+        category=category or None,
+    )
 
     # ── Upload ────────────────────────────────────────────────────────────────
     yield {"step": "upload", "status": "done", "message": f"{filename} received ({file_mb} MB)"}
 
     # ── Parsing ───────────────────────────────────────────────────────────────
     yield {"step": "parsing", "status": "in_progress", "message": "Extracting text..."}
-    try:
-        text = await asyncio.to_thread(_parse_text, content, filename)
-        yield {"step": "parsing", "status": "done", "message": f"Extracted {len(text):,} characters"}
-    except Exception as exc:
-        yield {"step": "parsing", "status": "error", "message": "Failed to extract text"}
-        raise
+    t0 = time.perf_counter()
+    with tracer.start_as_current_span(
+        "ingest_parsing",
+        attributes={
+            "synapse.ingest.filename": filename,
+            "synapse.ingest.batch_id": batch_id,
+        },
+    ) as parsing_span:
+        try:
+            text = await asyncio.to_thread(_parse_text, content, filename)
+            parsing_span.set_attribute("synapse.ingest.chars_extracted", len(text))
+            parsing_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
+            log.info(
+                "ingest_parsing_complete",
+                batch_id=batch_id,
+                chars_extracted=len(text),
+                duration_ms=parsing_duration_ms,
+            )
+            yield {"step": "parsing", "status": "done", "message": f"Extracted {len(text):,} characters"}
+        except Exception as exc:
+            parsing_span.record_exception(exc)
+            parsing_span.set_status(StatusCode.ERROR, str(exc))
+            log.error("ingest_parsing_failed", batch_id=batch_id, error=str(exc), exc_info=True)
+            yield {"step": "parsing", "status": "error", "message": "Failed to extract text"}
+            raise
 
     # ── Chunking ──────────────────────────────────────────────────────────────
     yield {"step": "chunking", "status": "in_progress", "message": "Splitting into chunks..."}
-    chunks = await asyncio.to_thread(_split_text, text)
-    if not chunks:
-        yield {"step": "chunking", "status": "error", "message": "No content found in file"}
-        raise ValueError("No chunks produced — file may be empty")
+    t0 = time.perf_counter()
+    with tracer.start_as_current_span(
+        "ingest_chunking",
+        attributes={
+            "synapse.ingest.batch_id": batch_id,
+            "synapse.ingest.chunk_size": CHUNK_SIZE,
+            "synapse.ingest.chunk_overlap": CHUNK_OVERLAP,
+        },
+    ) as chunking_span:
+        chunks = await asyncio.to_thread(_split_text, text)
+        if not chunks:
+            chunking_span.set_status(StatusCode.ERROR, "No chunks produced")
+            log.error("ingest_chunking_empty", batch_id=batch_id, filename=filename)
+            yield {"step": "chunking", "status": "error", "message": "No content found in file"}
+            raise ValueError("No chunks produced — file may be empty")
+        avg_chunk_len = round(sum(len(c) for c in chunks) / len(chunks))
+        chunking_span.set_attribute("synapse.ingest.chunk_count", len(chunks))
+        chunking_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
+        log.info(
+            "ingest_chunking_complete",
+            batch_id=batch_id,
+            chunk_count=len(chunks),
+            avg_chunk_chars=avg_chunk_len,
+            duration_ms=chunking_duration_ms,
+        )
     yield {"step": "chunking", "status": "done", "message": f"Created {len(chunks)} chunks"}
 
     # ── Embedding ─────────────────────────────────────────────────────────────
     yield {"step": "embedding", "status": "in_progress", "message": f"Generating {len(chunks)} embeddings..."}
-    try:
-        embeddings = await _embed_all(chunks)
-        yield {"step": "embedding", "status": "done", "message": f"Generated {len(embeddings)} embeddings"}
-    except Exception as exc:
-        yield {"step": "embedding", "status": "error", "message": "Embedding generation failed"}
-        raise
+    t0 = time.perf_counter()
+    embed_batches = (len(chunks) + EMBED_BATCH - 1) // EMBED_BATCH
+    with tracer.start_as_current_span(
+        "ingest_embedding",
+        attributes={
+            "gen_ai.system": "openai",
+            "gen_ai.request.model": EMBEDDING_MODEL,
+            "gen_ai.operation.name": "embeddings",
+            "synapse.ingest.batch_id": batch_id,
+            "synapse.ingest.chunk_count": len(chunks),
+            "synapse.ingest.embed_batches": embed_batches,
+        },
+    ) as embed_span:
+        try:
+            embeddings = await _embed_all(chunks)
+            embed_span.set_attribute("synapse.ingest.embeddings_generated", len(embeddings))
+            embedding_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
+            log.info(
+                "ingest_embedding_complete",
+                batch_id=batch_id,
+                embeddings_count=len(embeddings),
+                embed_batches=embed_batches,
+                duration_ms=embedding_duration_ms,
+            )
+            yield {"step": "embedding", "status": "done", "message": f"Generated {len(embeddings)} embeddings"}
+        except Exception as exc:
+            embed_span.record_exception(exc)
+            embed_span.set_status(StatusCode.ERROR, str(exc))
+            log.error("ingest_embedding_failed", batch_id=batch_id, error=str(exc), exc_info=True)
+            yield {"step": "embedding", "status": "error", "message": "Embedding generation failed"}
+            raise
 
     # ── Storing ───────────────────────────────────────────────────────────────
     yield {"step": "storing", "status": "in_progress", "message": "Storing in vector database..."}
-    try:
-        deleted = await asyncio.to_thread(_delete_existing, filename)
-        await asyncio.to_thread(_insert_chunks, batch_id, filename, category, chunks, embeddings)
-        msg = f"Stored {len(chunks)} chunks"
-        if deleted:
-            msg += f" (replaced {deleted} existing)"
-        yield {"step": "storing", "status": "done", "message": msg}
-    except Exception as exc:
-        yield {"step": "storing", "status": "error", "message": "Failed to store in database"}
-        raise
+    t0 = time.perf_counter()
+    with tracer.start_as_current_span(
+        "ingest_storing",
+        attributes={
+            "db.system": "postgresql",
+            "db.operation": "insert",
+            "synapse.ingest.batch_id": batch_id,
+        },
+    ) as store_span:
+        try:
+            deleted = await asyncio.to_thread(_delete_existing, filename)
+            await asyncio.to_thread(_insert_chunks, batch_id, filename, category, chunks, embeddings)
+            store_span.set_attribute("synapse.ingest.chunks_stored", len(chunks))
+            store_span.set_attribute("synapse.ingest.chunks_replaced", deleted)
+            storing_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
+            log.info(
+                "ingest_storing_complete",
+                batch_id=batch_id,
+                chunks_stored=len(chunks),
+                chunks_replaced=deleted,
+                duration_ms=storing_duration_ms,
+            )
+            msg = f"Stored {len(chunks)} chunks"
+            if deleted:
+                msg += f" (replaced {deleted} existing)"
+            yield {"step": "storing", "status": "done", "message": msg}
+        except Exception as exc:
+            store_span.record_exception(exc)
+            store_span.set_status(StatusCode.ERROR, str(exc))
+            log.error("ingest_storing_failed", batch_id=batch_id, error=str(exc), exc_info=True)
+            yield {"step": "storing", "status": "error", "message": "Failed to store in database"}
+            raise
+
+    total_duration_ms = round((time.perf_counter() - t_pipeline) * 1000, 1)
+    log.info(
+        "ingest_pipeline_complete",
+        batch_id=batch_id,
+        filename=filename,
+        category=category or None,
+        chunks_stored=len(chunks),
+        chunks_replaced=deleted,
+        total_duration_ms=total_duration_ms,
+    )

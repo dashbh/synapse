@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('fe.ingest');
 
 export type IngestionStep = 'upload' | 'parsing' | 'chunking' | 'embedding' | 'storing';
 export type StepStatus = 'idle' | 'in_progress' | 'done' | 'error';
@@ -99,6 +102,7 @@ export function useIngestionStream(endpoint: string): UseIngestionStreamReturn {
 
       const formData = new FormData();
       formData.append('file', file);
+      log.info('ingest_start', { file_name: file.name, file_size: file.size });
 
       (async () => {
         try {
@@ -109,6 +113,7 @@ export function useIngestionStream(endpoint: string): UseIngestionStreamReturn {
           });
 
           if (response.status === 401 || response.status === 403) {
+            log.warn('ingest_unauthorized', { file_name: file.name });
             setIsStreaming(false);
             setIsUnauthorized(true);
             return;
@@ -134,21 +139,23 @@ export function useIngestionStream(endpoint: string): UseIngestionStreamReturn {
               if (!trimmed) continue;
               try {
                 const msg = JSON.parse(trimmed) as IngestionProgressMessage;
+                log.info('ingest_step', { step: msg.step, status: msg.status });
                 setSteps((prev) => ({
                   ...prev,
                   [msg.step]: { status: msg.status, message: msg.message },
                 }));
               } catch {
-                console.error('[Ingest] Failed to parse message:', trimmed);
+                log.error('ingest_parse_error', { line: trimmed.slice(0, 200) });
               }
             }
           }
 
+          log.info('ingest_complete', { file_name: file.name });
           setIsStreaming(false);
           setIsDone(true);
         } catch (err) {
           if ((err as Error).name === 'AbortError') return;
-          console.error('[Ingest] Stream error:', err);
+          log.error('ingest_stream_error', { error: (err as Error).message });
           setIsStreaming(false);
           setIsError(true);
         } finally {

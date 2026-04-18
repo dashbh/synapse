@@ -1,5 +1,12 @@
 name: a2uiplatform
 
+# Give the default network a stable, explicit name so it never conflicts with
+# Docker Compose's auto-generated label when the observability file is merged in.
+# All services without an explicit `networks:` key join this network automatically.
+networks:
+  default:
+    name: a2uiplatform-net
+
 services:
 
   # ─────────────── DEV: Frontend ────────────────────────────────────────────

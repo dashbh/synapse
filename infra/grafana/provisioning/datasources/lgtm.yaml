@@ -1,0 +1,68 @@
+# Grafana datasource provisioning — Synapse LGTM Stack
+#
+# Auto-provisions Loki, Tempo, and Prometheus with cross-linking configured:
+#   Loki log line  → "View Trace in Tempo"  (via derivedFields on trace_id)
+#   Tempo trace    → related Loki logs       (via tracesToLogsV2)
+#   Prometheus     → Exemplars link spikes → Tempo traces
+
+apiVersion: 1
+
+datasources:
+  # ── Prometheus (metrics) ───────────────────────────────────────────────────
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    url: http://prometheus:9090
+    access: proxy
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+          urlDisplayLabel: View Trace in Tempo
+
+  # ── Grafana Loki (logs) ────────────────────────────────────────────────────
+  - name: Loki
+    type: loki
+    uid: loki
+    url: http://loki:3100
+    access: proxy
+    isDefault: false
+    jsonData:
+      # derivedFields: extract trace_id from JSON log lines and render a link
+      # to the matching trace in Tempo — works because structlog emits
+      # {"trace_id": "abc123..."} in every log line that has an active span.
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"trace_id"\s*:\s*"(\w+)"'
+          url: "${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: View Trace in Tempo
+
+  # ── Grafana Tempo (distributed traces) ─────────────────────────────────────
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3200
+    access: proxy
+    isDefault: false
+    jsonData:
+      # tracesToLogsV2: from a trace span, jump to Loki logs for same trace_id
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-1m"
+        spanEndTimeShift: "1m"
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: false
+      # serviceMap: render a service topology map from Tempo metrics-generator
+      serviceMap:
+        datasourceUid: prometheus
+      # nodeGraph: show the span dependency graph in trace view
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: loki

@@ -106,23 +106,6 @@ function SourcePreviewCard({
 }
 
 // ---------------------------------------------------------------------------
-// Skeleton loader
-// ---------------------------------------------------------------------------
-
-function SourceSkeleton() {
-  return (
-    <div className="rounded-xl border border-[var(--color-neutral-100)] bg-white p-4 animate-pulse space-y-2">
-      <div className="flex gap-2">
-        <div className="h-5 w-5 rounded-md bg-[var(--color-neutral-200)]" />
-        <div className="h-3 w-2/3 rounded bg-[var(--color-neutral-200)]" />
-      </div>
-      <div className="h-2.5 w-full rounded bg-[var(--color-neutral-100)]" />
-      <div className="h-2.5 w-4/5 rounded bg-[var(--color-neutral-100)]" />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // DocumentDrawer
 // ---------------------------------------------------------------------------
 

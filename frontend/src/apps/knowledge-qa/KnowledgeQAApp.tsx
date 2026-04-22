@@ -128,13 +128,12 @@ function TurnView({
   // Subscribe to the surface's component model to detect when updateComponents arrives
   useEffect(() => {
     if (!surface) return;
-    if ([...surface.componentsModel.entries].length > 0) {
-      setHasComponents(true);
-      return;
-    }
     const sub = surface.componentsModel.onCreated.subscribe(() => {
       setHasComponents(true);
     });
+    if ([...surface.componentsModel.entries].length > 0) {
+      queueMicrotask(() => setHasComponents(true));
+    }
     return () => sub.unsubscribe();
   }, [surface]);
 
@@ -188,7 +187,7 @@ function KnowledgeQAInner() {
   useEffect(() => {
     if (!sessionId || sessionId === lastHydratedSessionRef.current) return;
     lastHydratedSessionRef.current = sessionId;
-    setIsHydrating(true);
+    queueMicrotask(() => setIsHydrating(true));
 
     log.info('session_hydrate_start', { session_id: sessionId });
     fetch(`/api/sessions/${sessionId}/messages`, { credentials: 'include' })
@@ -305,7 +304,7 @@ function KnowledgeQAInner() {
     lastHydratedSessionRef.current = null;
     await switchSession(id);
     // The hydration useEffect will fire when sessionId changes
-  }, [switchSession, processor, drawer]);
+  }, [switchSession, processor, drawer, sessionId]);
 
   const handleNewChat = useCallback(async () => {
     log.info('session_new_chat', { prev_session_id: sessionId });
@@ -318,7 +317,7 @@ function KnowledgeQAInner() {
       processor.model.deleteSurface(id);
     }
     drawer.setSources([]);
-  }, [newSession, processor, drawer]);
+  }, [newSession, processor, drawer, sessionId]);
 
   // Register handlers so drawer buttons can trigger app-level actions
   useEffect(() => {

@@ -27,7 +27,7 @@ const SERVICE_NAME = 'synapse-frontend';
 const SEVERITY: Record<LogLevel, number> = { debug: 5, info: 9, warn: 13, error: 17 };
 
 // Browser: buffer logs and flush via sendBeacon to /api/telemetry/log
-let _buffer: LogRecord[] = [];
+const _buffer: LogRecord[] = [];
 let _flushScheduled = false;
 
 function _flush() {

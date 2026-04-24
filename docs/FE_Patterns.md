@@ -227,7 +227,7 @@ When ComponentHost encounters `{ "Image": {...} }`, it looks up in catalogRegist
 
 ### Step 5: Update Documentation
 
-**File:** `frontend/docs/FE_Reference.md`
+**File:** `docs/FE_Reference.md`
 
 Add new section:
 ```markdown
@@ -326,8 +326,8 @@ SSE stream completes but nothing renders.
 
    Network tab → knowledge-qa request → response body should show 2 JSON lines:
    ```
-   {"version":"v0.9","createSurface":{"surfaceId":"qa-result","catalogId":"stub"}}
-   {"version":"v0.9","updateComponents":{"surfaceId":"qa-result","components":[...]}}
+   {"version":"v0.9","createSurface":{"surfaceId":"qa-turn-<uuid>","catalogId":"stub"}}
+   {"version":"v0.9","updateComponents":{"surfaceId":"qa-turn-<uuid>","components":[...]}}
    ```
 
 2. **Does `surfaceId` match across both messages?**
@@ -413,14 +413,14 @@ BACKEND_URL=http://localhost:8000
 
 ```bash
 # Backend directly:
-curl -sN -X POST "http://localhost:8000/api/agents/knowledge-qa?query=What+is+RAG"
+curl -sN -X POST "http://localhost:8000/api/agents/knowledge-qa?query=What+is+RAG&surface_id=qa-turn-test-001"
 
 # Through Next.js proxy:
-curl -sN -X POST "http://localhost:3000/api/agents/knowledge-qa?query=What+is+RAG"
+curl -sN -X POST "http://localhost:3000/api/agents/knowledge-qa?query=What+is+RAG&surface_id=qa-turn-test-001"
 
 # Expected output (2 lines):
-# {"version":"v0.9","createSurface":{"surfaceId":"qa-result","catalogId":"stub"}}
-# {"version":"v0.9","updateComponents":{"surfaceId":"qa-result","components":[...]}}
+# {"version":"v0.9","createSurface":{"surfaceId":"qa-turn-test-001","catalogId":"stub"}}
+# {"version":"v0.9","updateComponents":{"surfaceId":"qa-turn-test-001","components":[...]}}
 ```
 
 ### How the proxy works

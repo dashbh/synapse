@@ -104,7 +104,7 @@ sequenceDiagram
         BE->>DB: fetch last 10 messages WHERE session_id=X
         DB-->>BE: conversation_history[]
     end
-    BE->>DB: vector_search(vector, k=5, threshold=0.78)
+    BE->>DB: vector_search(vector, k=5, threshold=0.70)
     DB-->>BE: chunks[]
     BE->>OAI: chat.complete(SYSTEM_PROMPT + history + chunks + query) — gpt-4o-mini
     OAI-->>BE: answer text (Architect's Triad format)
@@ -297,7 +297,7 @@ The full pipeline runs inside `knowledge_qa_agent.py`:
 4. match_document_chunks(embedding=vector, match_count=5)
    → Supabase pgvector RPC (cosine similarity via <#> operator)
    ↓
-5. Filter: discard chunks where similarity < MIN_SIMILARITY (0.78)
+5. Filter: discard chunks where similarity < MIN_SIMILARITY (0.70)
    → Prevents low-quality context from polluting the LLM prompt
    ↓
 6. Build prompt:

@@ -67,7 +67,7 @@ Stream closes after Message 2.
 
 ```
 embed_query     → OpenAI text-embedding-ada-002 (1536-dim)
-hybrid_retrieval → Supabase pgvector (match_document_chunks RPC, MIN_SIMILARITY=0.78)
+hybrid_retrieval → Supabase pgvector (match_document_chunks RPC, MIN_SIMILARITY=0.70)
 llm_completion  → OpenAI gpt-4o-mini (last-10-msg session history prepended)
 stream_response → SSE yield createSurface + updateComponents
 store_messages  → async background task (user query + A2UI payload stored)

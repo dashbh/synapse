@@ -38,7 +38,7 @@ log = get_logger(__name__)
 EMBEDDING_MODEL = "text-embedding-ada-002"
 CHAT_MODEL = "gpt-4o-mini"
 TOP_K = 5
-MIN_SIMILARITY = 0.75  # chunks below this score are not relevant — raise to tighten, lower to broaden
+MIN_SIMILARITY = 0.70  # chunks below this score are not relevant — raise to tighten, lower to broaden
 
 SYSTEM_PROMPT = """\
 You are a precise technical knowledge assistant. Structure every answer into exactly three sections using these H2 headings, in this order:

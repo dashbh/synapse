@@ -1,7 +1,7 @@
 # A2UIPlatform Architecture Overview
 
-**Last Updated:** April 11, 2026  
-**Status:** v1.1 "Persistence & Precision" — Session persistence + multi-turn Q&A implemented; hybrid search and Architect's Triad planned
+**Last Updated:** April 2026  
+**Status:** MVP Complete
 
 ---
 
@@ -45,7 +45,7 @@
 │  │  8. Stream Message 2: updateComponents(surface_id)    │   │
 │  │  9. Background task: store_messages(session_id, ...)  │   │
 │  │  10. Close SSE stream                                 │   │
-│  │  [Phase 2] RRF hybrid search + Architect's Triad      │   │
+│  │  [Architect's Triad format enforced via SYSTEM_PROMPT] │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
          │
@@ -56,11 +56,8 @@
 │                    DATA LAYER (Supabase — hosted)               │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ pgvector embeddings table (document_chunks)            │   │
-│  │   └─ GIN index on tsvector column (FTS)               │   │
-│  │ documents table (title, excerpt, source)              │   │
 │  │ sessions table (id, name, created_at, updated_at)     │   │
 │  │ messages table (id, session_id, role, a2ui_payload)   │   │
-│  │ Hybrid search: pgvector similarity + FTS via GIN      │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -80,7 +77,7 @@ flowchart TB
 
     subgraph cloud["Cloud Services"]
         oai["OpenAI API\ntext-embedding-ada-002 · gpt-4o-mini"]
-        sb["Supabase (hosted)\nPostgreSQL + pgvector + FTS (GIN)\nsessions · messages · document_chunks"]
+        sb["Supabase (hosted)\nPostgreSQL + pgvector\nsessions · messages · document_chunks"]
     end
 
     ui <-->|"HTTP / SSE stream"| fe
@@ -89,7 +86,7 @@ flowchart TB
     be <-->|"vector search · insert chunks"| sb
 ```
 
-### Query Flow (v1.1 — Hybrid Search + Session Context)
+### Query Flow
 
 ```mermaid
 sequenceDiagram
@@ -97,26 +94,18 @@ sequenceDiagram
     participant FE as Next.js
     participant BE as FastAPI
     participant OAI as OpenAI
-    participant DB as Supabase (pgvector + FTS)
+    participant DB as Supabase (pgvector)
 
     User->>FE: POST /api/agents/knowledge-qa (query + session_id)
     FE->>BE: proxy
     BE-->>FE: ① createSurface (A2UI v0.9)
     BE->>OAI: embed(query) — text-embedding-ada-002
     OAI-->>BE: vector[1536]
-
-    par Parallel Retrieval
-        BE->>DB: vector_search(vector, k=10, threshold=0.78)
-        DB-->>BE: semantic_results[]
-    and
-        BE->>DB: fts_search(tsquery, k=10) via GIN index
-        DB-->>BE: keyword_results[]
-    end
-
-    BE->>BE: RRF merge(semantic_results, keyword_results) → top_k=5
+    BE->>DB: vector_search(vector, k=5, threshold=0.78)
+    DB-->>BE: chunks[]
     BE->>DB: fetch last 10 messages WHERE session_id=X
     DB-->>BE: conversation_history[]
-    BE->>OAI: chat.complete(history + merged_chunks + query) — gpt-4o-mini
+    BE->>OAI: chat.complete(history + chunks + query) — gpt-4o-mini
     OAI-->>BE: answer text (Architect's Triad format)
     BE->>DB: INSERT message (session_id, role=assistant, a2ui_payload)
     BE-->>FE: ② updateComponents (A2UI v0.9)
@@ -370,7 +359,7 @@ Rendered HTML with design token styling
 
 ---
 
-## 3. v1.1 Feature Architecture
+## 3. Feature Architecture
 
 ### 3.1 Session Persistence
 
@@ -425,86 +414,7 @@ User sees full conversation history, fully styled (design tokens applied)
 
 ### 3.2 Hybrid Search (Retrieval)
 
-#### Why Hybrid Search?
-
-Pure vector search misses exact-match technical terms (acronyms, model names, version strings) where keyword frequency matters more than semantic proximity. Hybrid search combines both signals before the LLM sees any context.
-
-#### Supabase FTS Setup
-
-```sql
--- Add FTS column to document_chunks
-ALTER TABLE document_chunks
-  ADD COLUMN fts_vector TSVECTOR
-    GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
-
--- GIN index for fast full-text queries
-CREATE INDEX idx_chunks_fts ON document_chunks USING GIN(fts_vector);
-```
-
-#### Hybrid Search RPC
-
-```sql
--- Supabase RPC: hybrid_search_chunks
-CREATE OR REPLACE FUNCTION hybrid_search_chunks(
-  query_text    TEXT,
-  query_vector  VECTOR(1536),
-  match_count   INT DEFAULT 10
-)
-RETURNS TABLE (
-  id            UUID,
-  content       TEXT,
-  metadata      JSONB,
-  vector_rank   INT,
-  fts_rank      INT
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-  RETURN QUERY
-  WITH vector_hits AS (
-    SELECT id,
-           ROW_NUMBER() OVER (ORDER BY embedding <#> query_vector) AS rank
-    FROM document_chunks
-    ORDER BY embedding <#> query_vector
-    LIMIT match_count
-  ),
-  fts_hits AS (
-    SELECT id,
-           ROW_NUMBER() OVER (ORDER BY ts_rank(fts_vector, query) DESC) AS rank
-    FROM document_chunks,
-         plainto_tsquery('english', query_text) query
-    WHERE fts_vector @@ query
-    ORDER BY ts_rank(fts_vector, query) DESC
-    LIMIT match_count
-  )
-  SELECT dc.id, dc.content, dc.metadata,
-         COALESCE(vh.rank, match_count + 1)::INT AS vector_rank,
-         COALESCE(fh.rank, match_count + 1)::INT AS fts_rank
-  FROM document_chunks dc
-  LEFT JOIN vector_hits vh ON dc.id = vh.id
-  LEFT JOIN fts_hits    fh ON dc.id = fh.id
-  WHERE vh.id IS NOT NULL OR fh.id IS NOT NULL;
-END;
-$$;
-```
-
-#### Reciprocal Rank Fusion (RRF) — Python
-
-```python
-# agents/knowledge_qa_agent.py
-RRF_K = 60  # dampening constant
-
-def rrf_merge(rows: list[dict], top_k: int = 5) -> list[dict]:
-    """Fuse vector and FTS ranked lists using Reciprocal Rank Fusion."""
-    scored = []
-    for row in rows:
-        score = (1 / (RRF_K + row["vector_rank"])) + \
-                (1 / (RRF_K + row["fts_rank"]))
-        scored.append({**row, "rrf_score": score})
-    scored.sort(key=lambda x: x["rrf_score"], reverse=True)
-    return scored[:top_k]
-```
-
-**Flow:** `hybrid_search_chunks` RPC → Python `rrf_merge()` → top-5 chunks passed to `gpt-4o-mini`.
+> Hybrid Search is in the backlog. See [Roadmap.md](Roadmap.md). Current retrieval uses `match_document_chunks` pgvector RPC only.
 
 ---
 
@@ -544,7 +454,7 @@ Structure every answer using exactly these three sections:
 
 ---
 
-## 3. Backend Architecture (v1 — Implemented)
+## 3. Backend Architecture
 
 ### Request/Response Contract
 
@@ -568,8 +478,7 @@ Stream closes after Message 2.
 - **Framework:** FastAPI + uvicorn
 - **Embedding:** OpenAI `text-embedding-ada-002` (1536-dim)
 - **Vector Store:** Supabase pgvector (`match_document_chunks` RPC)
-- **Full-Text Search:** Supabase PostgreSQL FTS via GIN index on `tsvector` column
-- **Retrieval:** Hybrid search RPC (`hybrid_search_chunks`) + RRF merge in Python
+- **Retrieval:** pgvector similarity search (`match_document_chunks` RPC, threshold 0.78)
 - **LLM:** OpenAI `gpt-4o-mini` via OpenAI SDK
 - **Session Store:** Supabase `sessions` + `messages` tables (JSONB payload)
 - **Proxy:** Next.js route handler proxies to FastAPI when `BACKEND_URL` is set
@@ -597,13 +506,13 @@ backend/
 │       ├── sessions.py          GET/POST/DELETE /api/sessions
 │       └── ingest.py            POST /api/agents/ingest
 └── agents/
-    ├── knowledge_qa_agent.py    Embed → hybrid_search_chunks → RRF → history → chat → Triad
+    ├── knowledge_qa_agent.py    Embed → vector_search → history → chat → Triad (Architect's Triad via SYSTEM_PROMPT)
     └── ingest_agent.py          Parse → chunk → embed → store (SSE progress)
 ```
 
 ---
 
-## 4. Infrastructure (v1 — Implemented)
+## 4. Infrastructure
 
 ### Docker Compose (`infra/docker-compose.yml`)
 
@@ -649,7 +558,7 @@ make help              # list all available targets
 
 ---
 
-### Observability Stack (v1.1 — Implemented)
+### Observability Stack
 
 The LGTM sidecar is bundled into `make dev` and runs automatically alongside the application.
 
@@ -669,7 +578,7 @@ FastAPI Backend (port 8000)
   │  structlog emits JSON logs with trace_id + span_id on every line
   │  RAG pipeline: 4 named child spans
   │    ├─ embed_query       (gen_ai.system=openai, gen_ai.request.model=ada-002)
-  │    ├─ hybrid_retrieval  (db.system=postgresql, synapse.retrieval.chunks_returned=N)
+  │    ├─ retrieval  (db.system=postgresql, synapse.retrieval.chunks_returned=N)
   │    ├─ llm_completion    (gen_ai.usage.total_tokens=N)
   │    └─ stream_response   (synapse.response.sources_count=N)
   │  /metrics endpoint → synapse_rag_step_duration_seconds histogram
@@ -735,7 +644,7 @@ Next.js proxy
 useSSE.ts → onTraceId callback fires with confirmed trace ID
 ```
 
-**Result:** A single trace ID links the browser request → Next.js proxy → FastAPI HTTP span → embed_query → hybrid_retrieval → llm_completion → stream_response. All visible in one Tempo trace waterfall.
+**Result:** A single trace ID links the browser request → Next.js proxy → FastAPI HTTP span → embed_query → retrieval → llm_completion → stream_response. All visible in one Tempo trace waterfall.
 
 ### Deployment (Future)
 
@@ -748,7 +657,7 @@ useSSE.ts → onTraceId callback fires with confirmed trace ID
 
 ## 5. Communication Contracts
 
-### FE → BE (v1.1: FastAPI with session support)
+### FE → BE
 
 **Input (URL query params):**
 - `query` (string, required)
@@ -784,16 +693,16 @@ New apps added to AppRegistry only. No root changes.
 ### Catalog Extensibility
 ```
 src/a2ui/catalog/components/
-├─ TextComponent       (v1 — h1/h2/h3/body/caption hints)
-├─ CardComponent       (v1)
-├─ ButtonComponent     (v1)
-├─ BadgeComponent      (v1)
-├─ SourceListComponent (v1 — compact citation strip; registers sources via sourceRegistry)
-├─ MetadataCard        (v1 — document/section/date/category)
-├─ MarkdownComponent   (v1 — react-markdown + GFM; [N] patterns → clickable citation badges)
-├─ ConfidenceBadge     (v1 UI helper — Strong/Good/Relevant/Partial tiers; used by Drawer)
-├─ ImageComponent      (v2+)
-├─ FormComponent       (v2+)
+├─ TextComponent       ✅ h1/h2/h3/body/caption hints
+├─ CardComponent       ✅
+├─ ButtonComponent     ✅
+├─ BadgeComponent      ✅
+├─ SourceListComponent ✅ compact citation strip; registers sources via sourceRegistry
+├─ MetadataCard        ✅ document/section/date/category
+├─ MarkdownComponent   ✅ react-markdown + GFM; [N] patterns → clickable citation badges
+├─ ConfidenceBadge     ✅ UI helper — Strong/Good/Relevant/Partial tiers; used by Drawer
+├─ ImageComponent      🔲 Backlog
+├─ FormComponent       🔲 Backlog
 └─ ...
 ```
 New components added to catalog + registered in ComponentHost. No renderer changes.
@@ -835,39 +744,26 @@ See [Contracts.md §6](Contracts.md) for backend error shapes and [Governance.md
 
 ---
 
-## 9. Version Status & Next Priorities
+## 9. Status & Architecture Decisions
 
-### v1.0 — Complete ✅
+### MVP — Complete ✅
 
-- [x] **FE:** Platform Shell, Knowledge-QA app, A2UI v0.9, SSE streaming, catalog components
-- [x] **BE:** FastAPI, RAG query pipeline, document ingestion pipeline, health endpoint
-- [x] **DB:** Supabase operational — pgvector, `document_chunks` table, `match_document_chunks` RPC
-- [x] **Infra:** Docker Compose (`dev` + `prod` profiles), multi-stage Dockerfiles
-- [x] **Observability:** LGTM sidecar (Loki + Grafana + Tempo + Prometheus), OTel distributed tracing, structlog JSON logging, W3C trace propagation, RAG step histograms
+- [x] **FE:** Platform Shell, Knowledge-QA app, A2UI v0.9, SSE streaming, 7 catalog components
+- [x] **BE:** FastAPI, RAG query pipeline, document ingestion pipeline, session persistence, Architect's Triad
+- [x] **DB:** Supabase — pgvector, `document_chunks`, `sessions`, `messages` tables
+- [x] **Infra:** Docker Compose (`dev` + `prod` profiles), multi-stage Dockerfiles, LGTM observability sidecar
+- [x] **Observability:** OTel distributed tracing, structlog JSON, W3C trace propagation, FE structured logging, Grafana dashboards, Playwright E2E tests
 
-### v1.1 — "Persistence & Precision" (In Progress)
-
-- [ ] **Session Persistence:** `sessions` + `messages` tables; create/name/delete sessions; 10-message context window
-- [ ] **Session Hydration:** FE replays stored `a2ui_payload` through MessageProcessor on session resume
-- [ ] **Hybrid Search:** GIN FTS index on `document_chunks.fts_vector`; `hybrid_search_chunks` RPC; Python RRF merge
-- [ ] **Architect's Triad:** LLM prompt template + A2UI component mapping for Blueprint/Ripple/Boundary format
-- [ ] **Sessions API:** `GET/POST/DELETE /api/sessions` endpoints
-
-### v2.0 — Next
-
-- [ ] **Reflexive-Brain app** — quick capture, global search, agentic triage
-- [ ] **Auth:** Real OAuth/SAML replacing the v1 bypass on `/ingest`
-- [ ] **Implicit Ingestion** — automated watcher for cloud/local folder sync
+For backlog and planned features, see [Roadmap.md](Roadmap.md).
 
 **Architecture decisions (locked):**
 - LLM: OpenAI `gpt-4o-mini`
 - Embeddings: OpenAI `text-embedding-ada-002`
-- Vector store: Supabase pgvector + FTS (GIN)
-- Retrieval: Hybrid search (RRF fusion)
+- Vector store: Supabase pgvector (`match_document_chunks` RPC)
 - Orchestration: Direct SDK calls (no LangChain)
 - Transport: SSE over plain fetch (no WebSocket)
 - Session storage: Supabase PostgreSQL (JSONB payloads)
 
 ---
 
-*This document is conceptual. For implementation details, see [Product_Requirements.md](Product_Requirements.md) (business rules) and [Contracts.md](Contracts.md) (interface specs).*
+*For platform requirements see [Platform_Requirements.md](Platform_Requirements.md). For interface specs see [Contracts.md](Contracts.md).*

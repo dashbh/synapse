@@ -97,9 +97,8 @@ src/apps/ ← can import from both above
 
 ## What NOT to Do (v1 Constraints)
 
-- ❌ No authentication / authorization (v1)
-- ❌ No user accounts / persistence (v1)
-- ❌ No real authentication / user accounts (v1 — mock token only)
+- ❌ No real authentication / authorization (mock bypass — real OAuth deferred, see Roadmap)
+
 - ❌ No over-engineering (follow YAGNI principle)
 - ❌ No client-side secrets (never leak API keys to browser)
 - ❌ No polling or WebSocket overhead (SSE only)
@@ -147,12 +146,11 @@ src/apps/ ← can import from both above
 
 ---
 
-## Testing Rules (Future v2)
+## Testing Rules
 
-- ✅ All components have Storybook stories
-- ✅ Critical paths have unit tests (useAgentStream, ComponentHost, MessageProcessor)
+- ✅ Playwright E2E tests operational — see [Testing_Strategy.md](Testing_Strategy.md)
 - ✅ E2E test: user query → full render pipeline
-- ❌ NOT required in v1 (demo-ready only)
+- Critical paths covered: home, knowledge-qa, session, upload
 
 ---
 
@@ -241,14 +239,13 @@ src/apps/ ← can import from both above
 
 ### Security & Authorization
 
-**Authentication (v1: Mock, v2+: Real):**
-- (v1) Mock authentication for demo purposes
-- (v2+) OAuth, SAML, or custom provider
+**Authentication (current: mock bypass — real OAuth in backlog):**
+- Ingestion endpoint uses a mock bypass; real OAuth/SAML deferred (see [Roadmap.md](Roadmap.md))
 
-**Authorization (v1: Mock, v2+: Real):**
+**Authorization:**
 - Admin role: Access to ingestion endpoints
 - User role: Access to app queries
-- Role-based access control (RBAC) per app
+- Role-based access control (RBAC) per app — deferred until real auth is implemented
 
 **Data Privacy:**
 - ✅ No sensitive data in logs

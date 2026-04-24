@@ -2,7 +2,7 @@
 
 **Version:** 1.1  
 **Last Updated:** April 18, 2026  
-**Status:** E2E tests operational (11 passing) · k6 load testing pending (next iteration)
+**Status:** E2E tests operational (11 passing) · k6 load testing in backlog
 
 ---
 
@@ -21,7 +21,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Layer 4: Load Testing (k6)              — next iteration       │
+│  Layer 4: Load Testing (k6)              — 🔲 Backlog           │
 │  Concurrent users, RAG throughput, ingest stress → Grafana      │
 ├─────────────────────────────────────────────────────────────────┤
 │  Layer 3: E2E Testing (Playwright)       — ✅ 11/12 passing     │
@@ -170,61 +170,9 @@ curl -s -X POST http://localhost:8000/api/agents/ingest \
 
 ---
 
-## 5. Load Testing (k6) — Next Iteration
+## 5. Load Testing (k6) — Backlog
 
-**Status: pending.** Makefile targets are wired. The 3 scenario files and the k6 Grafana dashboard JSON still need to be created. Pick this up once `make dev` is confirmed healthy.
-
-### Prerequisites
-
-```bash
-brew install k6   # macOS
-# or: choco install k6  (Windows)
-```
-
-The full observability stack must be running to capture load test results in Grafana:
-
-```bash
-make dev   # or make dev-d for detached
-```
-
-### Scenarios
-
-| Scenario | File | What it tests |
-|---|---|---|
-| RAG query ramp | `infra/load-tests/scenarios/rag-query.js` | Ramp 1→5 VUs; measures p95 query latency; threshold: p95 < 10s, error rate < 5% |
-| Concurrent sessions | `infra/load-tests/scenarios/concurrent-sessions.js` | 10 VUs × 5 iterations; each VU creates its own session and submits a query |
-| Ingestion stress | `infra/load-tests/scenarios/ingest-load.js` | 3 VUs × 2 minutes; concurrent file uploads; threshold: p95 < 60s |
-
-### Running
-
-```bash
-# From repo root — each test writes metrics to Prometheus remote write
-make load-test-query       # RAG query ramp
-make load-test-sessions    # Concurrent sessions
-make load-test-ingest      # Ingestion stress
-```
-
-### Viewing results in Grafana
-
-Results appear in the **k6 Load Tests** dashboard at **http://localhost:3001** within ~1 minute:
-
-- VUs over time
-- Request rate and duration percentiles (p50/p95/p99)
-- Custom RAG query latency (`fe_rag_query_latency_ms`)
-- Error rate (`fe_rag_error_rate`)
-- Checks pass rate
-
-k6 outputs metrics to Prometheus via `--out experimental-prometheus-rw`. Prometheus already has `--web.enable-remote-write-receiver` enabled.
-
-### Thresholds
-
-Each scenario enforces thresholds — k6 exits with a non-zero code if they are breached:
-
-| Metric | Threshold |
-|---|---|
-| `fe_rag_query_latency_ms` p95 | < 10,000ms |
-| `fe_rag_error_rate` | < 5% |
-| `http_req_duration` p95 (ingest) | < 60,000ms |
+**Status: backlog.** Three scenarios planned: RAG query ramp, concurrent sessions, ingest stress. Makefile targets (`load-test-query`, `load-test-sessions`, `load-test-ingest`) are already wired. Scenario files and Grafana k6 dashboard JSON not yet created. See [Roadmap.md](Roadmap.md).
 
 ---
 

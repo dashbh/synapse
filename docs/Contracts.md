@@ -307,12 +307,11 @@ Backend team must verify:
 
 ---
 
-## 11. Ingestion Contract (Knowledge-QA) — Phase 2
+## 11. Ingestion Contract (Knowledge-QA)
 
 ### Purpose
 
 **What:** Backend accepts document files for ingestion into the Knowledge-QA vector store  
-**When:** Phase 2 (v2.0) — allows data to be loaded before queries can retrieve it  
 **Who:** Admin users only (via authentication guard)
 
 ### Request Specification
@@ -497,7 +496,7 @@ When Knowledge-QA query arrives, backend:
 
 ---
 
-## 10. Future Extensions (v2+)
+## 10. Future Extensions (Backlog)
 
 These are NOT implemented in v1 but planned:
 

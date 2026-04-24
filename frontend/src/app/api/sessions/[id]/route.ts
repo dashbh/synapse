@@ -18,11 +18,13 @@ export async function PATCH(
     });
   }
 
+  const traceparent = request.headers.get('traceparent');
   const upstream = await fetch(`${BACKEND_URL}/api/sessions/${id}`, {
     method: 'PATCH',
     headers: {
       Cookie: request.headers.get('cookie') ?? '',
       'Content-Type': 'application/json',
+      ...(traceparent ? { traceparent } : {}),
     },
     body: await request.text(),
   });
@@ -47,10 +49,12 @@ export async function DELETE(
     return res;
   }
 
+  const traceparentDel = request.headers.get('traceparent');
   const upstream = await fetch(`${BACKEND_URL}/api/sessions/${id}`, {
     method: 'DELETE',
     headers: {
       Cookie: request.headers.get('cookie') ?? '',
+      ...(traceparentDel ? { traceparent: traceparentDel } : {}),
     },
   });
 

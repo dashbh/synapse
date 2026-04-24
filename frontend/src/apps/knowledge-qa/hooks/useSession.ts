@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createLogger } from '@/lib/logger';
+import { tracedFetch } from '@/lib/tracedFetch';
 
 const log = createLogger('fe.session');
 
@@ -17,7 +18,7 @@ export interface UseSessionReturn {
 }
 
 async function fetchOrCreateSession(): Promise<string | null> {
-  const currentRes = await fetch('/api/sessions/current', { credentials: 'include' });
+  const currentRes = await tracedFetch('/api/sessions/current', { credentials: 'include' });
   if (currentRes.ok) {
     const data = await currentRes.json();
     const id = data?.id ?? null;
@@ -25,7 +26,7 @@ async function fetchOrCreateSession(): Promise<string | null> {
     return id;
   }
 
-  const createRes = await fetch('/api/sessions', {
+  const createRes = await tracedFetch('/api/sessions', {
     method: 'POST',
     credentials: 'include',
   });
@@ -51,7 +52,7 @@ export function useSession(): UseSessionReturn {
 
   const newSession = useCallback(async (): Promise<string | null> => {
     try {
-      const res = await fetch('/api/sessions', {
+      const res = await tracedFetch('/api/sessions', {
         method: 'POST',
         credentials: 'include',
       });
@@ -71,7 +72,7 @@ export function useSession(): UseSessionReturn {
 
   const switchSession = useCallback(async (id: string): Promise<string | null> => {
     try {
-      const res = await fetch(`/api/sessions/${id}/activate`, {
+      const res = await tracedFetch(`/api/sessions/${id}/activate`, {
         method: 'POST',
         credentials: 'include',
       });

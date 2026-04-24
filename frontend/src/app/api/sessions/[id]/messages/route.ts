@@ -19,9 +19,11 @@ export async function GET(
     });
   }
 
+  const traceparent = request.headers.get('traceparent');
   const upstream = await fetch(`${BACKEND_URL}/api/sessions/${id}/messages`, {
     headers: {
       Cookie: request.headers.get('cookie') ?? '',
+      ...(traceparent ? { traceparent } : {}),
     },
   });
 

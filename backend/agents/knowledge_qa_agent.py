@@ -23,18 +23,16 @@ import os
 import time
 
 from openai import AsyncOpenAI
-from opentelemetry.trace import StatusCode
 from supabase import create_client, Client
 
 from app.config import settings
-from app.telemetry import get_logger, get_rag_step_histogram, get_tracer
+from app.telemetry import get_logger, get_rag_step_histogram, traced_step
 
 _LOG_QUERY_CONTENT = os.getenv("LOG_QUERY_CONTENT", "false").lower() == "true"
 
 _openai = AsyncOpenAI(api_key=settings.openai_api_key)
 _supabase: Client = create_client(settings.supabase_url, settings.supabase_anon_key)
 
-tracer = get_tracer(__name__)
 log = get_logger(__name__)
 
 EMBEDDING_MODEL = "text-embedding-ada-002"
@@ -196,15 +194,15 @@ async def run(
 
     # ── Step 1: embed_query (+ history fetch in parallel) ───────────────────
     t0 = time.perf_counter()
-    with tracer.start_as_current_span(
-        "embed_query",
-        attributes={
-            "gen_ai.system": "openai",
-            "gen_ai.request.model": EMBEDDING_MODEL,
-            "gen_ai.operation.name": "embeddings",
-        },
-    ) as embed_span:
-        try:
+    try:
+        async with traced_step(
+            "embed_query",
+            **{
+                "gen_ai.system": "openai",
+                "gen_ai.request.model": EMBEDDING_MODEL,
+                "gen_ai.operation.name": "embeddings",
+            },
+        ) as embed_span:
             history_coro = (
                 asyncio.to_thread(_fetch_history, session_id)
                 if session_id
@@ -218,11 +216,9 @@ async def run(
             if embed_tokens:
                 embed_span.set_attribute("gen_ai.usage.input_tokens", embed_tokens)
             embedding = embed_response.data[0].embedding
-        except Exception as e:
-            embed_span.record_exception(e)
-            embed_span.set_status(StatusCode.ERROR, str(e))
-            e._synapse_stage = "embed"  # type: ignore[attr-defined]
-            raise
+    except Exception as e:
+        e._synapse_stage = "embed"  # type: ignore[attr-defined]
+        raise
     embed_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
     hist.record(embed_duration_ms / 1000, {"step": "embed_query"})
 
@@ -250,17 +246,17 @@ async def run(
 
     # ── Step 2: hybrid_retrieval ─────────────────────────────────────────────
     t0 = time.perf_counter()
-    with tracer.start_as_current_span(
-        "hybrid_retrieval",
-        attributes={
-            "db.system": "postgresql",
-            "db.operation": "rpc",
-            "db.statement": "match_document_chunks",
-            "synapse.retrieval.min_similarity": MIN_SIMILARITY,
-            "synapse.retrieval.top_k": TOP_K,
-        },
-    ) as retrieval_span:
-        try:
+    try:
+        async with traced_step(
+            "hybrid_retrieval",
+            **{
+                "db.system": "postgresql",
+                "db.operation": "rpc",
+                "db.statement": "match_document_chunks",
+                "synapse.retrieval.min_similarity": MIN_SIMILARITY,
+                "synapse.retrieval.top_k": TOP_K,
+            },
+        ) as retrieval_span:
             chunks = await asyncio.to_thread(
                 _search_chunks, embedding, category, date_from, date_to
             )
@@ -271,11 +267,9 @@ async def run(
             retrieval_span.set_attribute(
                 "synapse.retrieval.chunks_returned", len(relevant_chunks)
             )
-        except Exception as e:
-            retrieval_span.record_exception(e)
-            retrieval_span.set_status(StatusCode.ERROR, str(e))
-            e._synapse_stage = "retrieval"  # type: ignore[attr-defined]
-            raise
+    except Exception as e:
+        e._synapse_stage = "retrieval"  # type: ignore[attr-defined]
+        raise
     retrieval_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
     hist.record(retrieval_duration_ms / 1000, {"step": "hybrid_retrieval"})
 
@@ -317,16 +311,16 @@ async def run(
     )
 
     t0 = time.perf_counter()
-    with tracer.start_as_current_span(
-        "llm_completion",
-        attributes={
-            "gen_ai.system": "openai",
-            "gen_ai.request.model": CHAT_MODEL,
-            "gen_ai.operation.name": "chat",
-            "synapse.retrieval.context_chunks": len(relevant_chunks),
-        },
-    ) as llm_span:
-        try:
+    try:
+        async with traced_step(
+            "llm_completion",
+            **{
+                "gen_ai.system": "openai",
+                "gen_ai.request.model": CHAT_MODEL,
+                "gen_ai.operation.name": "chat",
+                "synapse.retrieval.context_chunks": len(relevant_chunks),
+            },
+        ) as llm_span:
             response = await _openai.chat.completions.create(
                 model=CHAT_MODEL,
                 max_tokens=1536,
@@ -339,11 +333,9 @@ async def run(
                 llm_span.set_attribute("gen_ai.usage.input_tokens", response.usage.prompt_tokens)
                 llm_span.set_attribute("gen_ai.usage.output_tokens", response.usage.completion_tokens)
                 llm_span.set_attribute("gen_ai.usage.total_tokens", response.usage.total_tokens)
-        except Exception as e:
-            llm_span.record_exception(e)
-            llm_span.set_status(StatusCode.ERROR, str(e))
-            e._synapse_stage = "llm"  # type: ignore[attr-defined]
-            raise
+    except Exception as e:
+        e._synapse_stage = "llm"  # type: ignore[attr-defined]
+        raise
     llm_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
     hist.record(llm_duration_ms / 1000, {"step": "llm_completion"})
 

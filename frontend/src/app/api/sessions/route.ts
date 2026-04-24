@@ -13,8 +13,12 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const traceparent = request.headers.get('traceparent');
   const upstream = await fetch(`${BACKEND_URL}/api/sessions`, {
-    headers: { Cookie: request.headers.get('cookie') ?? '' },
+    headers: {
+      Cookie: request.headers.get('cookie') ?? '',
+      ...(traceparent ? { traceparent } : {}),
+    },
   });
 
   return new Response(await upstream.text(), {
@@ -40,10 +44,12 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
+  const traceparent = request.headers.get('traceparent');
   const upstream = await fetch(`${BACKEND_URL}/api/sessions`, {
     method: 'POST',
     headers: {
       Cookie: request.headers.get('cookie') ?? '',
+      ...(traceparent ? { traceparent } : {}),
     },
   });
 

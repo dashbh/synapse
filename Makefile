@@ -21,7 +21,7 @@ OBS          := -f infra/docker-compose.observability.yml
 DEV_PROFILE  := --profile dev
 PROD_PROFILE := --profile prod
 
-.PHONY: dev prod obs obs-down down logs logs-be logs-fe ps build clean shell-be shell-fe help
+.PHONY: dev dev-d prod prod-d obs obs-down down logs logs-be logs-fe logs-obs ps build build-be build-fe clean shell-be shell-fe grafana-export test-e2e test-e2e-ui load-test-query load-test-sessions load-test-ingest help
 
 # ── Start ────────────────────────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ logs-fe: ## Tail frontend-dev logs only
 	$(COMPOSE) $(BASE) $(DEV_PROFILE) logs -f frontend-dev
 
 logs-obs: ## Tail observability stack logs (collector, loki, tempo, grafana)
-	$(COMPOSE) $(BASE) $(OBS) $(DEV_PROFILE) logs -f otel-collector loki tempo grafana prometheus
+	$(COMPOSE) $(BASE) $(OBS) logs -f otel-collector loki tempo grafana prometheus
 
 # ── Status ───────────────────────────────────────────────────────────────────
 

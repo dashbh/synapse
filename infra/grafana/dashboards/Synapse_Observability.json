@@ -403,7 +403,7 @@
           "refId": "A"
         }
       ],
-      "title": "RAG Completions \u2014 Token Usage",
+      "title": "RAG Completions — Token Usage",
       "type": "timeseries"
     },
     {
@@ -858,7 +858,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | json | level=\"error\" [$__interval]))",
+          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | level=\"error\" [$__interval]))",
           "legendFormat": "FE Errors",
           "refId": "A"
         }
@@ -898,7 +898,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service_name=\"synapse-frontend\"} | json | namespace=~\"fe\\\\.session.*\"",
+          "expr": "{service_name=\"synapse-frontend\"} | namespace=~\"fe\\\\.session.*\"",
           "legendFormat": "",
           "refId": "A"
         }
@@ -945,7 +945,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | json | message=\"query_submit\" [$__interval]))",
+          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | event=\"query_submit\" [$__interval]))",
           "legendFormat": "Queries",
           "refId": "A"
         }
@@ -992,7 +992,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | json | message=\"stream_start\" [$__interval]))",
+          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | event=\"stream_start\" [$__interval]))",
           "legendFormat": "start",
           "refId": "A"
         },
@@ -1001,7 +1001,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | json | message=\"stream_complete\" [$__interval]))",
+          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | event=\"stream_complete\" [$__interval]))",
           "legendFormat": "complete",
           "refId": "B"
         },
@@ -1010,7 +1010,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | json | message=\"stream_error\" [$__interval]))",
+          "expr": "sum(count_over_time({service_name=\"synapse-frontend\"} | event=\"stream_error\" [$__interval]))",
           "legendFormat": "error",
           "refId": "C"
         }
@@ -1057,7 +1057,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum by (step) (count_over_time({service_name=\"synapse-frontend\"} | json | message=\"ingest_step\" | status=\"done\" [$__interval]))",
+          "expr": "sum by (step) (count_over_time({service_name=\"synapse-frontend\"} | event=\"ingest_step\" | status=\"done\" [$__interval]))",
           "legendFormat": "{{step}}",
           "refId": "A"
         }
@@ -1097,7 +1097,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service_name=\"synapse-frontend\"} | json | level=\"error\"",
+          "expr": "{service_name=\"synapse-frontend\"} | level=\"error\"",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1122,8 +1122,26 @@
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
-            }
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short",
+              "noValue": "0"
+            },
+            "overrides": []
           },
           "gridPos": {
             "h": 7,
@@ -1134,18 +1152,36 @@
           "id": 13,
           "targets": [
             {
-              "expr": "rate(otelcol_receiver_accepted_spans_total[2m])",
-              "legendFormat": "received",
-              "refId": "A"
+              "expr": "round(sum(increase(otelcol_receiver_accepted_spans[$__range])))",
+              "legendFormat": "Spans Received",
+              "refId": "A",
+              "instant": true,
+              "range": false
             },
             {
-              "expr": "rate(otelcol_exporter_sent_spans_total{exporter=\"otlp/tempo\"}[2m])",
-              "legendFormat": "exported \u2192 Tempo",
-              "refId": "B"
+              "expr": "round(sum(increase(otelcol_exporter_sent_spans{exporter=\"otlp/tempo\"}[$__range])))",
+              "legendFormat": "Spans → Tempo",
+              "refId": "B",
+              "instant": true,
+              "range": false
             }
           ],
           "title": "Spans Received vs Exported",
-          "type": "timeseries"
+          "type": "stat",
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name"
+          }
         },
         {
           "datasource": {
@@ -1154,8 +1190,26 @@
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
-            }
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short",
+              "noValue": "0"
+            },
+            "overrides": []
           },
           "gridPos": {
             "h": 7,
@@ -1166,13 +1220,165 @@
           "id": 14,
           "targets": [
             {
-              "expr": "rate(otelcol_exporter_sent_log_records_total{exporter=\"otlphttp/loki\"}[2m])",
-              "legendFormat": "log records/s",
-              "refId": "A"
+              "expr": "round(sum(increase(otelcol_exporter_sent_log_records{exporter=\"otlphttp/loki\"}[$__range])))",
+              "legendFormat": "Log Records → Loki",
+              "refId": "A",
+              "instant": true,
+              "range": false
             }
           ],
-          "title": "Log Records Exported \u2192 Loki",
-          "type": "timeseries"
+          "title": "Log Records Exported → Loki",
+          "type": "stat",
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name"
+          }
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short",
+              "noValue": "0"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 45
+          },
+          "id": 22,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name"
+          },
+          "targets": [
+            {
+              "expr": "round(sum(increase(otelcol_exporter_send_failed_spans[$__range])))",
+              "legendFormat": "Failed Spans",
+              "refId": "A",
+              "instant": true,
+              "range": false
+            },
+            {
+              "expr": "round(sum(increase(otelcol_exporter_send_failed_log_records{exporter=\"otlphttp/loki\"}[$__range])))",
+              "legendFormat": "Failed Log Records",
+              "refId": "B",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "title": "Export Failures",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short",
+              "noValue": "0"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 45
+          },
+          "id": 23,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name"
+          },
+          "targets": [
+            {
+              "expr": "round(sum(increase(otelcol_receiver_refused_spans[$__range])))",
+              "legendFormat": "Refused Spans",
+              "refId": "A",
+              "instant": true,
+              "range": false
+            },
+            {
+              "expr": "round(sum(increase(otelcol_receiver_refused_log_records[$__range])))",
+              "legendFormat": "Refused Log Records",
+              "refId": "B",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "title": "Receiver Refusals",
+          "type": "stat"
         }
       ],
       "title": "OTel Collector Health",

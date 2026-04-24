@@ -100,6 +100,8 @@ function _toOtlp(records: LogRecord[]) {
             body: { stringValue: message },
             attributes: [
               { key: 'namespace', value: { stringValue: namespace } },
+              { key: 'level', value: { stringValue: level } },
+              { key: 'event', value: { stringValue: message } },
               ...Object.entries(attrs).map(([k, v]) => ({
                 key: k,
                 value: { stringValue: String(v ?? '') },

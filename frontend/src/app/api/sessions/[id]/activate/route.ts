@@ -23,9 +23,13 @@ export async function POST(
     return res;
   }
 
+  const traceparent = request.headers.get('traceparent');
   const upstream = await fetch(`${BACKEND_URL}/api/sessions/${id}/activate`, {
     method: 'POST',
-    headers: { Cookie: request.headers.get('cookie') ?? '' },
+    headers: {
+      Cookie: request.headers.get('cookie') ?? '',
+      ...(traceparent ? { traceparent } : {}),
+    },
   });
 
   const body = await upstream.text();

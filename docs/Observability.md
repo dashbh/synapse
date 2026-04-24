@@ -15,15 +15,33 @@
 | **Logs (FE)** | FE: stream lifecycle, session events, queries, ingest steps, errors | `createLogger()` → `sendBeacon` → `/api/telemetry/log` → OTLP HTTP | Grafana Loki | Grafana → Explore → Loki |
 | **Metrics** | BE: RAG step latency histograms, HTTP counts | OTel MeterProvider → Prometheus scrape | Prometheus | Grafana → Explore → Prometheus |
 
+### Trace Propagation Standard
+
+This platform uses the **[W3C Trace Context](https://www.w3.org/TR/trace-context/)** specification for distributed tracing across all layers.
+
+Every outgoing API request from the browser injects a `traceparent` header in the format:
+```
+00-{32-hex-trace-id}-{16-hex-parent-id}-01
+```
+
+| Layer | Role |
+|---|---|
+| **Browser** (`useSSE.ts`, `tracedFetch.ts`) | Generates a trace ID + parent ID via `crypto.randomUUID()` and injects `traceparent` into every fetch |
+| **Next.js proxy** (all `/api/` routes) | Extracts `traceparent` from the incoming browser request and forwards it upstream to FastAPI |
+| **FastAPI** (`FastAPIInstrumentor`) | Extracts the header automatically, creates an HTTP root span as a **child of the browser-originated trace** |
+| **Correlation** | Backend echoes back the confirmed `trace_id` via `X-Trace-ID` response header; the FE logger attaches it to all subsequent stream log lines |
+
+This means a single `trace_id` links: browser log lines in Loki → the HTTP span in Tempo → all RAG child spans → Prometheus exemplars.
+
 ### Data flow
 
 ```
 Browser (FE)
-  │ 1. Generates W3C traceparent header per stream request
+  │ 1. Generates W3C traceparent header for every API request (streaming + REST)
   │ 2. Sends structured log events via navigator.sendBeacon → /api/telemetry/log
   ▼
 Next.js proxy layer (FE API routes — server-side)
-  │ forwards traceparent upstream; relays X-Trace-ID downstream
+  │ forwards traceparent upstream on all routes; relays X-Trace-ID downstream
   │ writes JSON logs to stdout + forwards to OTel Collector directly
   ▼
 FastAPI backend (BE)
@@ -88,7 +106,7 @@ curl -s http://localhost:3200/ready
 # Expected: ready
 
 # 4. OTel Collector is receiving data (check after making a query)
-curl -s http://localhost:8888/metrics | grep otelcol_receiver_accepted_spans_total
+curl -s http://localhost:8888/metrics | grep otelcol_receiver_accepted_spans
 # Expected: a number > 0 after sending a query
 
 # 5. Backend metrics endpoint is live
@@ -371,13 +389,13 @@ rate(http_server_duration_milliseconds_count{http_status_code=~"5.."}[5m])
 # ── OTel Collector health ──────────────────────────────────────────────────
 
 # Spans received by collector
-rate(otelcol_receiver_accepted_spans_total[5m])
+rate(otelcol_receiver_accepted_spans[5m])
 
 # Spans successfully exported to Tempo
-rate(otelcol_exporter_sent_spans_total{exporter="otlp/tempo"}[5m])
+rate(otelcol_exporter_sent_spans{exporter="otlp/tempo"}[5m])
 
 # Logs successfully exported to Loki
-rate(otelcol_exporter_sent_log_records_total{exporter="otlphttp/loki"}[5m])
+rate(otelcol_exporter_sent_log_records{exporter="otlphttp/loki"}[5m])
 ```
 
 ### Step labels
@@ -406,6 +424,33 @@ The main dashboard at **http://localhost:3001** (Synapse Observability) contains
 | **OTel Collector Health** | Spans/logs received vs exported (collapsed by default) | Prometheus |
 
 The dashboard JSON is at `infra/grafana/dashboards/Synapse_Observability.json` and is provisioned automatically. It auto-reloads every 30 seconds — editing the JSON file and saving is enough to see changes in Grafana.
+
+### Accessing the pre-provisioned dashboard
+
+1. Run `make dev` (or `make dev-d` for detached)
+2. Open **http://localhost:3001** in your browser
+3. Login: username **`admin`** / password **`admin`** (anonymous admin is enabled — some browsers skip the prompt entirely)
+4. Navigate: **Dashboards → Browse → Synapse Observability**
+5. Set the time range to **Last 15 minutes** and enable auto-refresh (top-right dropdown → 30s)
+
+### Key metrics visualised per row
+
+| Row | Key Panels | What to look for |
+|---|---|---|
+| **HTTP Traffic** | Request rate (req/s), p95 HTTP latency, error rate (4xx/5xx %) | Spike in error rate → check Errors row and Loki for exception logs |
+| **RAG Pipeline** | Per-step latency histogram: `embed_query`, `hybrid_retrieval`, `llm_completion` (p50/p95/p99) | `llm_completion` dominating → normal; `hybrid_retrieval` high → Supabase RPC bottleneck |
+| **Application Logs** | Request flow log table (BE structured JSON, infra noise excluded) | Correlate `batch_id` / `session_id` across steps |
+| **Errors** | Error rate timeseries, last 20 error log lines with `error` field | `StatusCode.ERROR` spans surface here alongside the log event |
+| **Frontend** | SSE stream start/connect/complete, session lifecycle events, FE error count, ingestion pipeline steps | `stream_error` count spikes indicate network or BE issues |
+| **OTel Collector Health** | Spans/log-records received vs. exported, drop rate (collapsed by default) | Non-zero drop rate → increase `memory_limiter` or batch size in `otel-collector-config.yaml` |
+
+### Jumping from a metric exemplar to a trace
+
+In the **RAG Pipeline** row, histogram panels include Prometheus exemplars. Click any data point → **Inspect → Show exemplar** → click the trace ID link to jump directly to that span in Tempo. Requires exemplar storage enabled in `prometheus.yml` (already configured).
+
+### Jumping from a trace to correlated logs
+
+In Grafana → **Explore → Tempo**, open any trace → click a span → **Logs for this span** button. Grafana auto-queries Loki using `trace_id`, showing all BE log lines emitted during that span's lifetime. Cross-linking is provisioned in `infra/grafana/provisioning/datasources/lgtm.yaml`.
 
 ---
 
@@ -451,10 +496,10 @@ TraceQL: { trace:id = "<your-trace-id>" }
 
 ```bash
 # 1. Check the OTel Collector is receiving spans
-curl -s http://localhost:8888/metrics | grep otelcol_receiver_accepted_spans_total
+curl -s http://localhost:8888/metrics | grep otelcol_receiver_accepted_spans
 
 # 2. Check the collector is exporting to Tempo
-curl -s http://localhost:8888/metrics | grep 'otelcol_exporter_sent_spans_total{.*tempo'
+curl -s http://localhost:8888/metrics | grep 'otelcol_exporter_sent_spans{.*tempo'
 
 # 3. Check backend logs for export errors
 make logs-be | grep -i "otlp\|exporter\|error"
@@ -467,7 +512,7 @@ curl http://localhost:3200/ready
 
 ```bash
 # 1. Check the collector is exporting logs
-curl -s http://localhost:8888/metrics | grep otelcol_exporter_sent_log_records_total
+curl -s http://localhost:8888/metrics | grep otelcol_exporter_sent_log_records
 
 # 2. Confirm Loki is ready
 curl http://localhost:3100/ready

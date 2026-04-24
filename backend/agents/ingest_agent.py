@@ -22,16 +22,14 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from openai import AsyncOpenAI
-from opentelemetry.trace import StatusCode
 from supabase import create_client, Client
 
 from app.config import settings
-from app.telemetry import get_logger, get_tracer
+from app.telemetry import get_logger, traced_step
 
 _openai = AsyncOpenAI(api_key=settings.openai_api_key)
 _supabase: Client = create_client(settings.supabase_url, settings.supabase_anon_key)
 
-tracer = get_tracer(__name__)
 log = get_logger(__name__)
 
 EMBEDDING_MODEL = "text-embedding-ada-002"
@@ -197,14 +195,11 @@ async def run(
     # ── Parsing ───────────────────────────────────────────────────────────────
     yield {"step": "parsing", "status": "in_progress", "message": "Extracting text..."}
     t0 = time.perf_counter()
-    with tracer.start_as_current_span(
-        "ingest_parsing",
-        attributes={
-            "synapse.ingest.filename": filename,
-            "synapse.ingest.batch_id": batch_id,
-        },
-    ) as parsing_span:
-        try:
+    try:
+        async with traced_step(
+            "ingest_parsing",
+            **{"synapse.ingest.filename": filename, "synapse.ingest.batch_id": batch_id},
+        ) as parsing_span:
             text = await asyncio.to_thread(_parse_text, content, filename)
             parsing_span.set_attribute("synapse.ingest.chars_extracted", len(text))
             parsing_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -214,20 +209,18 @@ async def run(
                 chars_extracted=len(text),
                 duration_ms=parsing_duration_ms,
             )
-            yield {"step": "parsing", "status": "done", "message": f"Extracted {len(text):,} characters"}
-        except Exception as exc:
-            parsing_span.record_exception(exc)
-            parsing_span.set_status(StatusCode.ERROR, str(exc))
-            log.error("ingest_parsing_failed", batch_id=batch_id, error=str(exc), exc_info=True)
-            yield {"step": "parsing", "status": "error", "message": "Failed to extract text"}
-            raise
+        yield {"step": "parsing", "status": "done", "message": f"Extracted {len(text):,} characters"}
+    except Exception as exc:
+        log.error("ingest_parsing_failed", batch_id=batch_id, error=str(exc), exc_info=True)
+        yield {"step": "parsing", "status": "error", "message": "Failed to extract text"}
+        raise
 
     # ── Chunking ──────────────────────────────────────────────────────────────
     yield {"step": "chunking", "status": "in_progress", "message": "Splitting into chunks..."}
     t0 = time.perf_counter()
-    with tracer.start_as_current_span(
+    async with traced_step(
         "ingest_chunking",
-        attributes={
+        **{
             "synapse.ingest.batch_id": batch_id,
             "synapse.ingest.chunk_size": CHUNK_SIZE,
             "synapse.ingest.chunk_overlap": CHUNK_OVERLAP,
@@ -235,7 +228,6 @@ async def run(
     ) as chunking_span:
         chunks = await asyncio.to_thread(_split_text, text)
         if not chunks:
-            chunking_span.set_status(StatusCode.ERROR, "No chunks produced")
             log.error("ingest_chunking_empty", batch_id=batch_id, filename=filename)
             yield {"step": "chunking", "status": "error", "message": "No content found in file"}
             raise ValueError("No chunks produced — file may be empty")
@@ -255,18 +247,18 @@ async def run(
     yield {"step": "embedding", "status": "in_progress", "message": f"Generating {len(chunks)} embeddings..."}
     t0 = time.perf_counter()
     embed_batches = (len(chunks) + EMBED_BATCH - 1) // EMBED_BATCH
-    with tracer.start_as_current_span(
-        "ingest_embedding",
-        attributes={
-            "gen_ai.system": "openai",
-            "gen_ai.request.model": EMBEDDING_MODEL,
-            "gen_ai.operation.name": "embeddings",
-            "synapse.ingest.batch_id": batch_id,
-            "synapse.ingest.chunk_count": len(chunks),
-            "synapse.ingest.embed_batches": embed_batches,
-        },
-    ) as embed_span:
-        try:
+    try:
+        async with traced_step(
+            "ingest_embedding",
+            **{
+                "gen_ai.system": "openai",
+                "gen_ai.request.model": EMBEDDING_MODEL,
+                "gen_ai.operation.name": "embeddings",
+                "synapse.ingest.batch_id": batch_id,
+                "synapse.ingest.chunk_count": len(chunks),
+                "synapse.ingest.embed_batches": embed_batches,
+            },
+        ) as embed_span:
             embeddings = await _embed_all(chunks)
             embed_span.set_attribute("synapse.ingest.embeddings_generated", len(embeddings))
             embedding_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -277,26 +269,24 @@ async def run(
                 embed_batches=embed_batches,
                 duration_ms=embedding_duration_ms,
             )
-            yield {"step": "embedding", "status": "done", "message": f"Generated {len(embeddings)} embeddings"}
-        except Exception as exc:
-            embed_span.record_exception(exc)
-            embed_span.set_status(StatusCode.ERROR, str(exc))
-            log.error("ingest_embedding_failed", batch_id=batch_id, error=str(exc), exc_info=True)
-            yield {"step": "embedding", "status": "error", "message": "Embedding generation failed"}
-            raise
+        yield {"step": "embedding", "status": "done", "message": f"Generated {len(embeddings)} embeddings"}
+    except Exception as exc:
+        log.error("ingest_embedding_failed", batch_id=batch_id, error=str(exc), exc_info=True)
+        yield {"step": "embedding", "status": "error", "message": "Embedding generation failed"}
+        raise
 
     # ── Storing ───────────────────────────────────────────────────────────────
     yield {"step": "storing", "status": "in_progress", "message": "Storing in vector database..."}
     t0 = time.perf_counter()
-    with tracer.start_as_current_span(
-        "ingest_storing",
-        attributes={
-            "db.system": "postgresql",
-            "db.operation": "insert",
-            "synapse.ingest.batch_id": batch_id,
-        },
-    ) as store_span:
-        try:
+    try:
+        async with traced_step(
+            "ingest_storing",
+            **{
+                "db.system": "postgresql",
+                "db.operation": "insert",
+                "synapse.ingest.batch_id": batch_id,
+            },
+        ) as store_span:
             deleted = await asyncio.to_thread(_delete_existing, filename)
             await asyncio.to_thread(_insert_chunks, batch_id, filename, category, chunks, embeddings)
             store_span.set_attribute("synapse.ingest.chunks_stored", len(chunks))
@@ -309,16 +299,14 @@ async def run(
                 chunks_replaced=deleted,
                 duration_ms=storing_duration_ms,
             )
-            msg = f"Stored {len(chunks)} chunks"
-            if deleted:
-                msg += f" (replaced {deleted} existing)"
-            yield {"step": "storing", "status": "done", "message": msg}
-        except Exception as exc:
-            store_span.record_exception(exc)
-            store_span.set_status(StatusCode.ERROR, str(exc))
-            log.error("ingest_storing_failed", batch_id=batch_id, error=str(exc), exc_info=True)
-            yield {"step": "storing", "status": "error", "message": "Failed to store in database"}
-            raise
+        msg = f"Stored {len(chunks)} chunks"
+        if deleted:
+            msg += f" (replaced {deleted} existing)"
+        yield {"step": "storing", "status": "done", "message": msg}
+    except Exception as exc:
+        log.error("ingest_storing_failed", batch_id=batch_id, error=str(exc), exc_info=True)
+        yield {"step": "storing", "status": "error", "message": "Failed to store in database"}
+        raise
 
     total_duration_ms = round((time.perf_counter() - t_pipeline) * 1000, 1)
     log.info(

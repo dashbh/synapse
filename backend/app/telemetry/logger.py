@@ -24,6 +24,7 @@ Initialization (main.py lifespan only):
 
 import logging
 import os
+from contextlib import asynccontextmanager
 
 import structlog
 from opentelemetry import metrics, trace
@@ -38,6 +39,7 @@ from opentelemetry.sdk.resources import (
 )
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.trace import StatusCode
 
 # ── OTel Resource (shared across all three signals) ──────────────────────────
 _resource = Resource.create(
@@ -176,6 +178,26 @@ def _configure_logging() -> None:
     from opentelemetry.instrumentation.logging import LoggingInstrumentor
 
     LoggingInstrumentor().instrument(set_logging_format=False)
+
+
+# ── traced_step: decouples span lifecycle from agent business logic ───────────
+@asynccontextmanager
+async def traced_step(name: str, **attributes):
+    """
+    Async context manager wrapping a named OTel child span.
+
+    Automatically records exceptions and sets ERROR status so agent files
+    don't need to import StatusCode or call record_exception directly.
+    Yields the active span so callers can call set_attribute() for dynamic values.
+    """
+    _tracer = trace.get_tracer(__name__)
+    with _tracer.start_as_current_span(name, attributes=attributes) as span:
+        try:
+            yield span
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            raise
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

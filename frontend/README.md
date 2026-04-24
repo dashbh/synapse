@@ -2,7 +2,7 @@
 
 **Layer:** 🎨 Frontend Rendering  
 **Framework:** Next.js 16+ | TypeScript | React 19 | A2UI v0.9  
-**Status:** v1 Complete & Demo-Ready
+**Status:** v1 Closed — Core features, session persistence, and LGTM observability complete
 
 ---
 
@@ -115,7 +115,7 @@ frontend/src/
 - Data flows: App → Platform → A2UI → Components
 
 ### Component Isolation
-- **Catalog:** 5 components, all A2UI-compatible (Text, Card, Button, Badge, SourceList)
+- **Catalog:** 6 components, all A2UI-compatible (Text, Card, Button, Badge, SourceList, Markdown)
 - **Design tokens:** Centralized in [designTokens.ts](src/a2ui/catalog/designTokens.ts) (no scattered constants)
 - **Shared UI:** shadcn/ui base components in `components/ui/`
 
@@ -128,24 +128,34 @@ frontend/src/
 
 ## 📊 Current Status
 
-**v1.5 Features (All Complete):**
-- ✅ Platform Shell (multi-app routing)
-- ✅ A2UI Protocol (message processor + rendering)
+**v1 Closed — All core and session features complete:**
+- ✅ Platform Shell (multi-app routing via AppRegistry)
+- ✅ A2UI Protocol (MessageProcessor + 6 catalog components: Text, Card, Button, Badge, SourceList, Markdown)
 - ✅ SSE Transport (streaming) — explicit close on route change
-- ✅ Catalog Components (6: Text, Card, Button, Badge, SourceList, MetadataCard)
 - ✅ Knowledge-QA App (end-to-end working)
+- ✅ Multi-turn Q&A — unique `surfaceId` per turn, `TurnView` array, latest on top
+- ✅ Session persistence — `useSession` hook, cookie-based, BE-driven; session ID debug badge in header
 - ✅ TypeScript strict mode
 - ✅ Error handling + Graceful degradation
 - ✅ Design tokens system
 - ✅ Volatile session reset on app navigation
-- ✅ Ingestion UI — real-time Parsing → Chunking → Embedding progress
-- ✅ SSE `/ingest` endpoint (mock, with per-step streaming)
+- ✅ Ingestion UI — real-time Upload → Parsing → Chunking → Embedding → Storing
+- ✅ Real SSE `/ingest` endpoint (full pipeline)
 - ✅ Rich citations side panel (click-to-preview with full metadata)
-- ✅ Citation metadata (Document, Section, Date, Category)
-- ✅ Semantic search filters (category + date range)
-- ✅ Admin token gate for document ingestion
+- ✅ Inline `[N]` citation badges in Markdown → open Drawer Sources tab
+- ✅ Document Drawer (left sidebar/overlay, Documents + Sources tabs)
+- ✅ Drag-and-drop full-viewport overlay → auto-opens Drawer + starts ingestion
+- ✅ Command Palette (⌘K) — upload, view sources, new chat
+- ✅ ThinkingIndicator (conic-gradient spinner + sequenced process log)
 
-No open implementation gaps. See [docs/Product_Requirements.md](../docs/Product_Requirements.md) § 10 for the full compliance table.
+- ✅ Architect's Triad — system prompt enforces Blueprint / Systemic Ripple / Boundary Condition; rendered by existing `MarkdownComponent`
+- ✅ Session hydration — `GET /api/sessions/{id}/messages` + FE replay of `createSurface`/`updateComponents` on mount
+- ✅ Session sidebar / switcher — Sessions tab in drawer; list, rename (double-click), delete, switch; `POST /activate` updates cookie
+
+**Backlog (not yet implemented):**
+- 🔲 Hybrid Search — GIN FTS index + `hybrid_search_chunks` RPC + Python RRF merge
+
+See [docs/Product_Requirements.md](../docs/Product_Requirements.md) § 10 for the full compliance table.
 
 ---
 

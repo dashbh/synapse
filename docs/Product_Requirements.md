@@ -1,8 +1,8 @@
 # Project Synapse: AI Platform Specification
 
-**Version:** 1.7  
-**Status:** v1.1 "Persistence & Precision" — Active  
-**Last Updated:** April 11, 2026  
+**Version:** 2.0  
+**Status:** v1.2 Complete — FE structured logging, Grafana frontend panels, and Playwright E2E all shipped. Next: k6 load testing.  
+**Last Updated:** April 18, 2026  
 
 ---
 
@@ -279,13 +279,34 @@ Supporting UI components (not A2UI types):
 - ✅ CORS configurable via `CORS_ORIGINS` env var
 - ✅ Root-level `.env.example` with all required variables
 
-### v1.1 — "Persistence & Precision" (In Progress)
+### v1.1 — "Persistence & Precision" (Partially Complete — Remainder in Backlog)
 
-- [ ] Session Persistence — create/name/delete sessions; 10-message context window; `sessions` + `messages` tables
-- [ ] Session Hydration — FE replays `a2ui_payload` through MessageProcessor on session resume
-- [ ] Hybrid Search — GIN FTS index + `hybrid_search_chunks` RPC + Python RRF merge
-- [ ] Architect's Triad — structured Blueprint/Ripple/Boundary answer format
-- [ ] Sessions API — `GET/POST/DELETE /api/sessions` endpoints
+**Implemented:**
+- ✅ Sessions API — `GET /current`, `POST /`, `DELETE /{id}` in `routes/sessions.py`; cookie-based (`kqa_session_id`, 30-day)
+- ✅ Session Persistence (BE) — `sessions` + `messages` tables; `messages.a2ui_payload` JSONB; 10-message sliding context window
+- ✅ Session context in RAG — `_build_prompt` prepends history; embed + history fetched in parallel
+- ✅ Message persistence — `store_messages` fire-and-forget background task after each turn
+- ✅ Multi-turn Q&A (FE) — unique `surfaceId` per turn, `TurnView` array, latest turn on top
+- ✅ Session persistence (FE) — `useSession` hook; cookie-driven; session ID debug badge in header
+- ✅ Observability (LGTM) — OTel instrumentation, structlog JSON, Loki/Grafana/Tempo/Prometheus Docker sidecar
+- ✅ Trace propagation — W3C traceparent, X-Trace-ID; RAG step spans (embed, retrieval, LLM, stream)
+- ✅ Architect's Triad — `SYSTEM_PROMPT` in `knowledge_qa_agent.py`; Blueprint / Systemic Ripple / Boundary Condition sections via existing `MarkdownComponent`
+
+- ✅ Session Hydration — `GET /api/sessions/{id}/messages` returns pre-paired turns; FE replays `createSurface` + `updateComponents` through MessageProcessor on session load
+
+- ✅ Session sidebar / switcher — `SessionSwitcher` in drawer (Sessions tab); list, rename (double-click), delete, switch sessions; `POST /activate` updates cookie; hydration auto-triggers on session change
+
+**Completed (v1.2 — Observability & Quality):**
+- ✅ FE Structured Logging — `createLogger` utility (`frontend/src/lib/logger.ts`), `/api/telemetry/log` forwarding route, 8 instrumented touchpoints (SSE transport, session hooks, app component, ingest stream, API routes); browser logs flow to Loki via OTel Collector
+- ✅ Grafana Frontend Row — 7 panels appended to `Synapse_Observability.json` (FE error count, query submissions, session events, stream lifecycle, ingest steps, FE error logs); system overview without opening code
+- ✅ Playwright E2E Tests — `@playwright/test` v1.48 setup; 4 spec files (home, knowledge-qa, session, upload); 11 passing / 1 intentionally skipped (drag-drop Chromium limitation); test cleanup helper prevents DB pollution
+
+**Backlog (next iteration — v1.3):**
+- 🔲 k6 Load Testing — 3 scenarios (RAG query ramp, concurrent sessions, ingest stress); metrics → Prometheus remote write → dedicated Grafana k6 dashboard; `Makefile` targets already wired (`load-test-query`, `load-test-sessions`, `load-test-ingest`); scenario files and dashboard JSON not yet created
+
+**Backlog (not yet implemented):**
+- 🔲 Hybrid Search — GIN FTS index + `hybrid_search_chunks` RPC + Python RRF merge
+- 🔲 **[Tech Debt] SSR fix for `knowledge-qa` page** — `src/app/(apps)/knowledge-qa/page.tsx` is currently a Client Component (`'use client'`) to allow `dynamic({ ssr: false })` on `KnowledgeQAApp`. Proper fix: keep `page.tsx` as a Server Component and move `dynamic({ ssr: false })` into a dedicated `KnowledgeQAAppClient` client wrapper; audit all hooks/context that cause server/client divergence (specifically `usePreferences` localStorage reads and `useSession` async init) and apply `suppressHydrationWarning` or a `mounted` guard only where needed.
 
 ### v2.0 — Planned
 
@@ -316,6 +337,8 @@ Supporting UI components (not A2UI types):
 | API contracts & message specs | [Contracts.md](Contracts.md) |
 | How-to guides & patterns | [FE_Patterns.md](FE_Patterns.md) |
 | Frontend rules & constraints | [Governance.md](Governance.md) |
+| Observability & logging | [Observability.md](Observability.md) |
+| Testing strategy & E2E tests | [Testing_Strategy.md](Testing_Strategy.md) |
 
 ---
 
@@ -323,7 +346,7 @@ Supporting UI components (not A2UI types):
 
 All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 
-### 🟡 Frontend — v1.1 In Progress
+### 🔄 Frontend — v1.2 In Progress (Observability & Quality)
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
@@ -352,11 +375,15 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **C26** | Multi-turn Q&A display | ✅ Done | Each query gets unique `surfaceId`; `TurnView` subscribes to its surface; latest turn shown at top; no clearing between turns |
 | **C27** | Session persistence (FE) | ✅ Done | `useSession` hook — calls `GET /api/sessions/current` on mount; creates via `POST` if none; session ID shown as debug badge in header |
 | **C28** | Session ID debug badge | ✅ Done | Truncated 8-char hex in header; click to copy full UUID |
-| **C23** | Session sidebar / switcher | 🔲 Planned | Create, name, switch, delete sessions; loads history on select |
-| **C24** | Session hydration | 🔲 Planned | Replay stored `a2ui_payload` messages through MessageProcessor on resume |
-| **C25** | Architect's Triad rendering | 🔲 Planned | Three-section answer: Blueprint / Systemic Ripple / Boundary Condition |
+| **C23** | Session sidebar / switcher | ✅ Done | `SessionSwitcher` in drawer Sessions tab; list/rename(dbl-click)/delete/switch; active session highlighted |
+| **C24** | Session hydration | ✅ Done | `GET /api/sessions/{id}/messages` + FE replay of `createSurface`/`updateComponents` on mount; `isLoading` guard prevents empty-state flash |
+| **C25** | Architect's Triad rendering | ✅ Done | Three-section answer rendered by existing `MarkdownComponent` (H2 headings via react-markdown); no FE changes needed |
+| **C29** | FE Structured Logging | 🔄 In Progress | `frontend/src/lib/logger.ts` — `createLogger` factory; browser → `sendBeacon` → `/api/telemetry/log` → OTel Collector → Loki; Node path writes JSON to stdout + direct OTLP HTTP; `service_name=synapse-frontend` label |
+| **C30** | Grafana Frontend Row | 🔄 In Progress | 7 new panels (IDs 15–21) in `Synapse_Observability.json`; covers FE errors, session events, query rate, stream lifecycle, ingest steps |
+| **C31** | Playwright E2E Tests | 🔄 In Progress | `playwright.config.ts` + 4 spec files in `frontend/tests/e2e/`; runs in mock mode against `localhost:3000`; `npm run test:e2e` |
+| **C32** | k6 Load Testing | 🔲 Planned | 3 k6 scenarios → Prometheus remote write; k6 Grafana dashboard; `make load-test-*` targets |
 
-### 🟡 Backend — v1.1 In Progress
+### 🟢 Backend — v1.1 Complete
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
@@ -375,9 +402,9 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **B15** | Session context in RAG | ✅ Done | `_build_prompt` prepends conversation history; embed + history fetched in parallel via `asyncio.gather` |
 | **B16** | Message persistence | ✅ Done | `store_messages` fire-and-forget background task after each turn |
 | **B12** | `hybrid_search_chunks` RPC | 🔲 Planned | GIN FTS index + pgvector; RRF merge in `knowledge_qa_agent.py` |
-| **B13** | Architect's Triad prompt | 🔲 Planned | System prompt template in `knowledge_qa_agent.py`; section → A2UI mapping |
+| **B13** | Architect's Triad prompt | ✅ Done | `SYSTEM_PROMPT` constant in `knowledge_qa_agent.py`; three H2 sections rendered by existing `MarkdownComponent` |
 
-### 🟢 Infrastructure — Complete
+### 🟢 Infrastructure — v1.1 Complete
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
@@ -386,6 +413,13 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | **I3** | Backend Dockerfile | ✅ Done | Multi-stage: dev (uvicorn --reload) + prod (uvicorn workers) |
 | **I4** | Configurable CORS | ✅ Done | `CORS_ORIGINS` env var, comma-separated |
 | **I5** | Root `.env.example` | ✅ Done | Consolidated template for all services |
+| **I6** | LGTM Observability Stack | ✅ Done | `infra/docker-compose.observability.yml` — OTel Collector + Loki + Grafana + Tempo + Prometheus |
+| **I7** | OTel Instrumentation (BE) | ✅ Done | FastAPI + HTTPx auto-instrumented; RAG step spans; Prometheus histogram |
+| **I8** | Structured logging | ✅ Done | structlog JSON chain + OTel bridge; trace_id/span_id in every log line |
+| **I9** | Grafana dashboards | ✅ Done | Auto-provisioned datasources; cross-linked log→trace, metric→trace |
+| **I10** | Makefile shortcuts | ✅ Done | `make dev`, `make prod`, `make logs`, `make shell-be`, `make clean`, 15+ targets |
+| **I11** | FE OTel log forwarding | 🔄 In Progress | `OTEL_COLLECTOR_URL` env var in `docker-compose.observability.yml`; `frontend-dev` on `observability` network |
+| **I12** | k6 Load Test infrastructure | 🔲 Planned | k6 service (profile `load-test`) in observability compose; `infra/load-tests/scenarios/`; Prometheus remote write; k6 Grafana dashboard |
 
 ---
 
@@ -454,4 +488,6 @@ All v1.0 requirements are complete — Frontend, Backend, and Infrastructure.
 | April 10, 2026 | 1.5 | UX overhaul: Document Drawer (right panel), inline citation badges, ConfidenceBadge, ThinkingIndicator, Cmd+K palette, drag-and-drop overlay; §6, §8, §10–11 updated; search filters removed |
 | April 11, 2026 | 1.6 | v1.1 "Persistence & Precision": Session Persistence (create/name/delete, 10-msg context, hydration), Hybrid Search (GIN FTS + RRF), Architect's Triad format; §3.1/3.2, §8 roadmap, §10 status tables updated |
 | April 11, 2026 | 1.7 | v1.1 implemented: multi-turn Q&A (unique surfaceId per turn, latest on top), session API (cookie-based, BE UUID), session context in RAG, left sidebar with collapsed icon strip, sidebar/overlay variant, ConfidenceBadge green→amber gradient, duplicate Sources heading removed, UI polish (sidebar bg, no header border); §10–11 updated |
+| April 14, 2026 | 1.8 | v1 closed: updated overall status; §8 roadmap split into implemented vs. backlog for v1.1; LGTM observability stack (I6–I10) added to §10 infra table; remaining v1.1 features (hybrid search, Triad, hydration, session switcher) moved to backlog |
+| April 18, 2026 | 1.9 | v1.2 in progress: FE structured logging (C29), Grafana FE row (C30), Playwright E2E (C31) — all three executing now; k6 load testing (C32/I12) documented as next-iteration backlog; §8 roadmap updated with in-progress vs. next-iteration split; §10 FE + Infra tables updated |
 

@@ -1,4 +1,7 @@
 import { type NextRequest } from 'next/server';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('fe.api.knowledge-qa');
 
 // ---------------------------------------------------------------------------
 // When BACKEND_URL is set, proxy to the FastAPI backend.
@@ -9,14 +12,21 @@ const BACKEND_URL = process.env.BACKEND_URL; // e.g. http://localhost:8000
 
 export async function POST(request: NextRequest) {
   if (BACKEND_URL) {
-    // Proxy: forward the full query string to FastAPI and stream the response.
     const { searchParams } = new URL(request.url);
+    const query = searchParams.get('query') ?? '';
+    const traceparent = request.headers.get('traceparent');
     const targetUrl = `${BACKEND_URL}/api/agents/knowledge-qa?${searchParams.toString()}`;
+
+    log.info('query_proxy', { query: query.slice(0, 100), traceparent: traceparent ?? 'none' });
 
     const upstream = await fetch(targetUrl, {
       method: 'POST',
       signal: request.signal,
+      headers: traceparent ? { traceparent } : {},
     });
+
+    const backendTraceId = upstream.headers.get('X-Trace-ID');
+    log.info('query_proxy_response', { status: upstream.status, trace_id: backendTraceId ?? '' });
 
     return new Response(upstream.body, {
       status: upstream.status,
@@ -24,10 +34,12 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-cache, no-store',
         'X-Accel-Buffering': 'no',
+        ...(backendTraceId ? { 'X-Trace-ID': backendTraceId } : {}),
       },
     });
   }
 
+  log.info('query_mock', {});
   return mockResponse(request);
 }
 

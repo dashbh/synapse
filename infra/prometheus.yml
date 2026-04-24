@@ -1,0 +1,25 @@
+# Prometheus scrape configuration — Synapse Observability Sidecar
+#
+# Scrapes:
+#   - synapse-backend /metrics (RAG step histograms, OTel SDK metrics)
+#   - otel-collector  self-metrics (spans received, export success/failure)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  # Attach trace_id to metrics so Grafana Exemplars can link spikes → traces
+  external_labels:
+    cluster: synapse-local
+
+scrape_configs:
+  - job_name: synapse-backend
+    static_configs:
+      - targets: ["backend-dev:8000"]
+    metrics_path: /metrics
+    # Exemplars are automatically scraped from the OpenMetrics endpoint
+    # when the backend uses opentelemetry-exporter-prometheus
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+    metrics_path: /metrics

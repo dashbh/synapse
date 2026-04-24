@@ -1,0 +1,72 @@
+# OpenTelemetry Collector — Synapse Observability Sidecar
+#
+# Receives OTLP from the Python backend (gRPC on 4317, HTTP on 4318).
+# Fans out:
+#   traces → Grafana Tempo  (OTLP gRPC)
+#   logs   → Grafana Loki   (OTLP HTTP)
+#
+# To swap backends (e.g. Jaeger instead of Tempo), edit only the exporters
+# and service.pipelines sections — no backend code changes needed.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Batch before exporting — reduces network overhead
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Add resource attributes to all telemetry
+  resource:
+    attributes:
+      - key: collector.name
+        value: synapse-otel-collector
+        action: upsert
+
+  # Memory limiter — prevents OOM in the collector under heavy load
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+exporters:
+  # Traces → Grafana Tempo
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # Logs → Grafana Loki (via OTLP HTTP — Loki 3.x supports OTLP natively)
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+  # Debug: log received telemetry to collector stdout (basic verbosity)
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [otlp/tempo, debug]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki, debug]
+
+  telemetry:
+    logs:
+      level: warn   # collector's own logs (not your app logs)
+    metrics:
+      address: 0.0.0.0:8888   # Prometheus scrapes collector self-metrics here

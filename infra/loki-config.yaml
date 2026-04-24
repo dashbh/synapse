@@ -1,0 +1,72 @@
+# Grafana Loki — single-node local configuration (Loki 3.x)
+#
+# Fixes: "zone not set" error in Loki 3.x default config when running
+# as a single-node instance without zone-aware replication.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+# Single-node ingester — zone awareness is implicitly disabled when
+# replication_factor=1 and kvstore=inmemory (set via the common block above).
+ingester:
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    final_sleep: 0s
+    min_ready_duration: 0s        # skip the 15s stability window on single-node dev
+  chunk_idle_period: 1h
+  max_chunk_age: 1h
+  chunk_target_size: 1048576
+  chunk_retain_period: 30s
+  # Disable the owned-streams recalculation timer — it queries zone information
+  # from the ring which does not exist on a single-node instance, producing
+  # "zone not set" errors every interval. Setting to a very long value
+  # effectively disables it for local development.
+  owned_streams_check_interval: 999h
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # Single-node: compute rate limit locally — no ring query needed.
+  # Fixes: "error getting ingester clients" err="empty ring" (ratestore.go)
+  ingestion_rate_strategy: local
+  # Disable zone-aware stream sharding — requires a multi-zone cluster.
+  # Fixes: "failed to get token ranges for ingester" err="zone not set"
+  shard_streams:
+    enabled: false
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+analytics:
+  reporting_enabled: false

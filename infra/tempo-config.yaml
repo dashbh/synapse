@@ -1,0 +1,33 @@
+# Grafana Tempo — local storage configuration (Tempo 2.5.x)
+# Traces are retained for 72 hours (configurable via block_retention)
+#
+# Note: metrics_generator is omitted intentionally — it requires the correct
+# processor config for each Tempo minor version and is not needed for basic
+# distributed tracing. Span-to-metrics and service topology can be added later.
+
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  max_block_duration: 5m
+  trace_idle_period: 10s
+
+compactor:
+  compaction:
+    block_retention: 72h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal

@@ -19,9 +19,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const traceparent = request.headers.get('traceparent');
   const upstream = await fetch(`${BACKEND_URL}/api/sessions/current`, {
     headers: {
       Cookie: request.headers.get('cookie') ?? '',
+      ...(traceparent ? { traceparent } : {}),
     },
   });
 

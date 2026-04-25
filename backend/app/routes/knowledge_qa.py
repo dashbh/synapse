@@ -64,7 +64,7 @@ async def _stream(
 ):
     # Span 4: stream_response — wraps the full SSE streaming lifecycle.
     # The parent span (HTTP request) was created by FastAPIInstrumentor.
-    # Child spans (embed_query, hybrid_retrieval, llm_completion) are created
+    # Child spans (embed_query, retrieval, llm_completion) are created
     # inside agent.run() as grandchildren of this span.
     # Note: session_id, request_id, http_path etc. are already in structlog
     # contextvars (bound by request_context_middleware) — no need to repeat them.

@@ -32,12 +32,12 @@ Stream closes after Message 2. The React layer (`A2UISurface`) subscribes to `on
 
 The library (`@a2ui/web_core/v0_9`) supports four message types:
 
-| Type | Purpose | Used in v1? |
+| Type | Purpose | Status |
 |---|---|---|
-| `createSurface` | Register a surface | ✅ |
-| `updateComponents` | Set component definitions + props | ✅ |
-| `updateDataModel` | Populate a data model (for path bindings) | v2+ |
-| `deleteSurface` | Remove a surface | v2+ |
+| `createSurface` | Register a surface | ✅ Complete |
+| `updateComponents` | Set component definitions + props | ✅ Complete |
+| `updateDataModel` | Populate a data model (for path bindings) | 🔲 Backlog |
+| `deleteSurface` | Remove a surface | 🔲 Backlog |
 
 ---
 
@@ -49,7 +49,7 @@ Registers a new surface. Must be sent before `updateComponents`.
 {
   "version": "v0.9",
   "createSurface": {
-    "surfaceId": "qa-result",
+    "surfaceId": "qa-turn-abc123",
     "catalogId": "stub"
   }
 }
@@ -60,7 +60,7 @@ Registers a new surface. Must be sent before `updateComponents`.
 | `surfaceId` | ✅ | Unique ID for this surface (used in all following messages) |
 | `catalogId` | ✅ | Which component catalog to use (`"stub"` for v1) |
 | `theme` | ❌ | Optional theme override |
-| `sendDataModel` | ❌ | If true, FE will send data model back to backend (v2+) |
+| `sendDataModel` | ❌ | If true, FE will send data model back to backend (Backlog) |
 
 **Rule:** No `components` field here — components are set in `updateComponents`.
 
@@ -74,7 +74,7 @@ Sets the complete component tree for a surface. Sent after `createSurface`.
 {
   "version": "v0.9",
   "updateComponents": {
-    "surfaceId": "qa-result",
+    "surfaceId": "qa-turn-abc123",
     "components": [
       {
         "id": "answer-label",
@@ -134,15 +134,15 @@ Props are **flat key-value pairs** at the component level — not nested under t
 
 ---
 
-### updateDataModel (v2+)
+### updateDataModel (Backlog)
 
-Populates a data model that components can reference via path bindings. Not used in v1 — current backend sends all values as inline flat props in `updateComponents`.
+Populates a data model that components can reference via path bindings. Not currently used — backend sends all values as inline flat props in `updateComponents`.
 
 ```json
 {
   "version": "v0.9",
   "updateDataModel": {
-    "surfaceId": "qa-result",
+    "surfaceId": "qa-turn-abc123",
     "path": "/answer",
     "value": "Machine learning is..."
   }

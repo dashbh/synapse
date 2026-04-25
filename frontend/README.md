@@ -74,7 +74,7 @@ frontend/src/
 - Contracts: [docs/Contracts.md](../docs/Contracts.md) — What backend sends, what frontend expects
 
 ### For Business Context ("Why are we building this?")
-- Product spec: [docs/Product_Requirements.md](../docs/Product_Requirements.md) — Vision, goals, scope, v1 features
+- Platform spec: [docs/Platform_Requirements.md](../docs/Platform_Requirements.md) — Platform vision & hosted apps
 
 ---
 
@@ -88,7 +88,9 @@ frontend/src/
 | **Architecture.md** | System layers, tech stack rationale, data flow diagram |
 | **Contracts.md** | Frontend↔Backend interface: message specs, ingestion schema |
 | **Governance.md** | Code standards, quality SLAs, security, performance rules |
-| **Product_Requirements.md** | Business vision, goals, feature scope, roadmap |
+| **Platform_Requirements.md** | Platform vision, hosted apps, NFRs |
+| **apps/knowledge-qa.md** | Knowledge-QA app spec, UX, API, data model |
+| **Roadmap.md** | Backlog, tech debt, planned features |
 
 ---
 
@@ -128,7 +130,7 @@ frontend/src/
 
 ## 📊 Current Status
 
-**v1 Closed — All core and session features complete:**
+**MVP Complete — All features shipped:**
 - ✅ Platform Shell (multi-app routing via AppRegistry)
 - ✅ A2UI Protocol (MessageProcessor + 6 catalog components: Text, Card, Button, Badge, SourceList, Markdown)
 - ✅ SSE Transport (streaming) — explicit close on route change
@@ -151,11 +153,14 @@ frontend/src/
 - ✅ Architect's Triad — system prompt enforces Blueprint / Systemic Ripple / Boundary Condition; rendered by existing `MarkdownComponent`
 - ✅ Session hydration — `GET /api/sessions/{id}/messages` + FE replay of `createSurface`/`updateComponents` on mount
 - ✅ Session sidebar / switcher — Sessions tab in drawer; list, rename (double-click), delete, switch; `POST /activate` updates cookie
+- ✅ FE structured logging — `createLogger` factory; browser → `sendBeacon` → `/api/telemetry/log` → OTel Collector → Loki
+- ✅ Grafana Frontend Row — 7 panels (FE errors, session events, query rate, stream lifecycle, ingest steps)
+- ✅ Playwright E2E Tests — 4 spec files; 11 passing / 1 intentionally skipped (drag-drop Chromium limitation)
 
-**Backlog (not yet implemented):**
+**Backlog:**
 - 🔲 Hybrid Search — GIN FTS index + `hybrid_search_chunks` RPC + Python RRF merge
 
-See [docs/Product_Requirements.md](../docs/Product_Requirements.md) § 10 for the full compliance table.
+See [docs/Roadmap.md](../docs/Roadmap.md) for full backlog.
 
 ---
 

@@ -47,7 +47,7 @@ Next.js proxy layer (FE API routes — server-side)
 FastAPI backend (BE)
   ├── FastAPIInstrumentor → HTTP root span (child of browser trace)
   ├── structlog JSON logs → stdlib → OTELHandler → OTLP gRPC (port 4317)
-  ├── RAG spans: embed_query → hybrid_retrieval → llm_completion → stream_response
+  ├── RAG spans: embed_query → retrieval → llm_completion → stream_response
   └── /metrics endpoint → Prometheus histogram per RAG step
   ▼
 OTel Collector (port 4317 gRPC / 4318 HTTP)
@@ -161,7 +161,7 @@ Traces show the full pipeline waterfall for a single query: how long each step t
 POST /api/agents/knowledge-qa          ~1.5s  ← HTTP root span
   └─ stream_response                   ~1.4s
        ├─ embed_query                  ~120ms   gen_ai.request.model=text-embedding-ada-002
-       ├─ hybrid_retrieval             ~80ms    db.statement=match_document_chunks
+       ├─ retrieval                    ~80ms    db.statement=match_document_chunks
        │                                        synapse.retrieval.chunks_returned=3
        └─ llm_completion              ~900ms   gen_ai.usage.total_tokens=847
 ```
@@ -171,7 +171,7 @@ POST /api/agents/knowledge-qa          ~1.5s  ← HTTP root span
 | Span | Key attributes |
 |---|---|
 | `embed_query` | `gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens` |
-| `hybrid_retrieval` | `db.system`, `synapse.retrieval.chunks_total`, `synapse.retrieval.chunks_returned`, `synapse.retrieval.min_similarity` |
+| `retrieval` | `db.system`, `synapse.retrieval.chunks_total`, `synapse.retrieval.chunks_returned`, `synapse.retrieval.min_similarity` |
 | `llm_completion` | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.total_tokens` |
 | `stream_response` | `synapse.surface_id`, `synapse.query.length`, `synapse.response.sources_count` |
 
@@ -405,7 +405,7 @@ The `synapse_rag_step_duration_seconds` histogram has a `step` label:
 | `step` value | What it measures |
 |---|---|
 | `embed_query` | OpenAI ada-002 embedding API call |
-| `hybrid_retrieval` | Supabase pgvector RPC (`match_document_chunks`) |
+| `retrieval` | Supabase pgvector RPC (`match_document_chunks`) |
 | `llm_completion` | OpenAI gpt-4o-mini chat completion |
 
 ---
@@ -438,7 +438,7 @@ The dashboard JSON is at `infra/grafana/dashboards/Synapse_Observability.json` a
 | Row | Key Panels | What to look for |
 |---|---|---|
 | **HTTP Traffic** | Request rate (req/s), p95 HTTP latency, error rate (4xx/5xx %) | Spike in error rate → check Errors row and Loki for exception logs |
-| **RAG Pipeline** | Per-step latency histogram: `embed_query`, `hybrid_retrieval`, `llm_completion` (p50/p95/p99) | `llm_completion` dominating → normal; `hybrid_retrieval` high → Supabase RPC bottleneck |
+| **RAG Pipeline** | Per-step latency histogram: `embed_query`, `retrieval`, `llm_completion` (p50/p95/p99) | `llm_completion` dominating → normal; `retrieval` high → Supabase RPC bottleneck |
 | **Application Logs** | Request flow log table (BE structured JSON, infra noise excluded) | Correlate `batch_id` / `session_id` across steps |
 | **Errors** | Error rate timeseries, last 20 error log lines with `error` field | `StatusCode.ERROR` spans surface here alongside the log event |
 | **Frontend** | SSE stream start/connect/complete, session lifecycle events, FE error count, ingestion pipeline steps | `stream_error` count spikes indicate network or BE issues |

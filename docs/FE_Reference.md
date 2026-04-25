@@ -103,7 +103,7 @@ CardContent: py-4 px-6
 interface ButtonComponentProps {
   label: unknown;       // Button label text
   variant?: unknown;    // 'secondary' | anything else (renders as primary)
-  onClick?: () => void; // (v2+)
+  onClick?: () => void;
 }
 ```
 
@@ -207,6 +207,58 @@ interface SourceListComponentProps {
       "category": "AI/ML"
     }
   ]
+}
+```
+
+---
+
+### MarkdownComponent (Custom)
+
+**File:** `MarkdownComponent.tsx`  
+**Maps:** A2UI `Markdown` type
+
+**Props:**
+```typescript
+interface MarkdownComponentProps {
+  markdown: unknown; // Markdown string; [N] citation patterns → clickable badges
+}
+```
+
+**Renders:** Full Markdown via `react-markdown` + `remark-gfm` (bold, italic, lists, code blocks, tables). Inline `[N]` patterns (e.g. `[1]`, `[2]`) are pre-processed into `cite:N` links and rendered as clickable citation badges that call `useCitation().openSource(N-1)` to open the corresponding source in the Document Drawer.
+
+**Usage in A2UI (`updateComponents.components[]`):**
+```json
+{ "id": "answer-body", "component": "Markdown", "markdown": "## The Blueprint\nRAG combines a **retrieval** step with an LLM [1]." }
+```
+
+---
+
+### MetadataCardComponent (Custom)
+
+**File:** `MetadataCardComponent.tsx`  
+**Maps:** A2UI `MetadataCard` type
+
+**Props:**
+```typescript
+interface MetadataCardComponentProps {
+  document: unknown;  // Source filename (e.g. "api-guide.pdf")
+  section:  unknown;  // Document section or heading
+  date:     unknown;  // Upload date YYYY-MM-DD
+  category: unknown;  // User-defined category tag
+}
+```
+
+**Renders:** Structured metadata grid — four labelled fields in a card layout. Used inside the Document Drawer to display source provenance.
+
+**Usage in A2UI (`updateComponents.components[]`):**
+```json
+{
+  "id": "source-meta",
+  "component": "MetadataCard",
+  "document": "ai-guide.pdf",
+  "section": "Chapter 3",
+  "date": "2025-11-15",
+  "category": "AI/ML"
 }
 ```
 
@@ -335,7 +387,11 @@ To add a new component to the catalog:
 
 **Component Signature:**
 ```typescript
-export function NewComponent(props: any, renderChild?: (id: string) => ReactElement | null) {
+interface NewComponentProps {
+  // declare all expected props as unknown (resolved via resolveStaticString / type narrowing)
+}
+
+export function NewComponent(props: NewComponentProps) {
   return <div>...</div>;
 }
 ```

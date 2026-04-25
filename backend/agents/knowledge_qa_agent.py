@@ -38,7 +38,7 @@ log = get_logger(__name__)
 EMBEDDING_MODEL = "text-embedding-ada-002"
 CHAT_MODEL = "gpt-4o-mini"
 TOP_K = 5
-MIN_SIMILARITY = 0.75  # chunks below this score are not relevant — raise to tighten, lower to broaden
+MIN_SIMILARITY = 0.70  # chunks below this score are not relevant — raise to tighten, lower to broaden
 
 SYSTEM_PROMPT = """\
 You are a precise technical knowledge assistant. Structure every answer into exactly three sections using these H2 headings, in this order:
@@ -244,11 +244,11 @@ async def run(
         openai_request_id=getattr(embed_response, "_request_id", None),
     )
 
-    # ── Step 2: hybrid_retrieval ─────────────────────────────────────────────
+    # ── Step 2: retrieval ────────────────────────────────────────────────────
     t0 = time.perf_counter()
     try:
         async with traced_step(
-            "hybrid_retrieval",
+            "retrieval",
             **{
                 "db.system": "postgresql",
                 "db.operation": "rpc",
@@ -271,7 +271,7 @@ async def run(
         e._synapse_stage = "retrieval"  # type: ignore[attr-defined]
         raise
     retrieval_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
-    hist.record(retrieval_duration_ms / 1000, {"step": "hybrid_retrieval"})
+    hist.record(retrieval_duration_ms / 1000, {"step": "retrieval"})
 
     scores = [float(c.get("similarity", 0)) for c in chunks]
     log.info(

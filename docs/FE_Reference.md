@@ -220,15 +220,15 @@ interface SourceListComponentProps {
 **Props:**
 ```typescript
 interface MarkdownComponentProps {
-  content: unknown; // Markdown string; [N] citation patterns → clickable badges
+  markdown: unknown; // Markdown string; [N] citation patterns → clickable badges
 }
 ```
 
-**Renders:** Full Markdown (bold, italic, lists, code blocks). Inline `[N]` patterns (e.g. `[1]`, `[2]`) are converted to clickable citation badges that open the corresponding source in the Document Drawer.
+**Renders:** Full Markdown via `react-markdown` + `remark-gfm` (bold, italic, lists, code blocks, tables). Inline `[N]` patterns (e.g. `[1]`, `[2]`) are pre-processed into `cite:N` links and rendered as clickable citation badges that call `useCitation().openSource(N-1)` to open the corresponding source in the Document Drawer.
 
 **Usage in A2UI (`updateComponents.components[]`):**
 ```json
-{ "id": "answer-body", "component": "Markdown", "content": "RAG combines a **retrieval** step with an LLM [1]." }
+{ "id": "answer-body", "component": "Markdown", "markdown": "## The Blueprint\nRAG combines a **retrieval** step with an LLM [1]." }
 ```
 
 ---

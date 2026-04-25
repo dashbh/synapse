@@ -40,6 +40,7 @@ make prod    # production (uvicorn workers)
 | `GET` | `/api/sessions/{id}/messages` | Return pre-paired turns `[{ query, a2ui_payload }]` for hydration |
 | `DELETE` | `/api/sessions/{id}` | Delete session and all its messages |
 | `GET` | `/health` | Health check — verifies OpenAI API key + Supabase connectivity |
+| `GET` | `/metrics` | Prometheus scrape endpoint (`synapse_rag_step_duration_seconds` histogram + default process metrics) |
 
 ### Query params for `/api/agents/knowledge-qa`
 
@@ -64,7 +65,7 @@ Stream closes after Message 2.
 
 ```
 embed_query     → OpenAI text-embedding-ada-002 (1536-dim)
-retrieval       → Supabase pgvector (match_document_chunks RPC, MIN_SIMILARITY=0.78)
+retrieval       → Supabase pgvector (match_document_chunks RPC, MIN_SIMILARITY=0.70)
 llm_completion  → OpenAI gpt-4o-mini (Architect's Triad SYSTEM_PROMPT + last-10-msg history)
 stream_response → SSE yield createSurface + updateComponents
 store_messages  → async background task (user query + A2UI payload stored)

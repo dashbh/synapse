@@ -244,11 +244,11 @@ async def run(
         openai_request_id=getattr(embed_response, "_request_id", None),
     )
 
-    # ── Step 2: hybrid_retrieval ─────────────────────────────────────────────
+    # ── Step 2: retrieval ────────────────────────────────────────────────────
     t0 = time.perf_counter()
     try:
         async with traced_step(
-            "hybrid_retrieval",
+            "retrieval",
             **{
                 "db.system": "postgresql",
                 "db.operation": "rpc",
@@ -271,7 +271,7 @@ async def run(
         e._synapse_stage = "retrieval"  # type: ignore[attr-defined]
         raise
     retrieval_duration_ms = round((time.perf_counter() - t0) * 1000, 1)
-    hist.record(retrieval_duration_ms / 1000, {"step": "hybrid_retrieval"})
+    hist.record(retrieval_duration_ms / 1000, {"step": "retrieval"})
 
     scores = [float(c.get("similarity", 0)) for c in chunks]
     log.info(

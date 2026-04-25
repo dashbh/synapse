@@ -60,30 +60,6 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### System Architecture
-
-```mermaid
-flowchart TB
-    subgraph browser["Browser"]
-        ui["Next.js / React\nA2UI v0.9 Rendering"]
-    end
-
-    subgraph compose["Docker Compose — infra/"]
-        fe["Frontend :3000\nNext.js"]
-        be["Backend :8000\nFastAPI + uvicorn"]
-    end
-
-    subgraph cloud["Cloud Services"]
-        oai["OpenAI API\ntext-embedding-ada-002 · gpt-4o-mini"]
-        sb["Supabase (hosted)\nPostgreSQL + pgvector\nsessions · messages · document_chunks"]
-    end
-
-    ui <-->|"HTTP / SSE stream"| fe
-    fe -->|"proxy via BACKEND_URL"| be
-    be -->|"embed query · generate answer"| oai
-    be <-->|"vector search · insert chunks"| sb
-```
-
 ### Query Flow
 
 ```mermaid
@@ -104,13 +80,14 @@ sequenceDiagram
         BE->>DB: fetch last 10 messages WHERE session_id=X
         DB-->>BE: conversation_history[]
     end
-    BE->>DB: vector_search(vector, k=5, threshold=0.70)
+    BE->>DB: match_document_chunks(embedding, match_count=5)
     DB-->>BE: chunks[]
+    Note over BE: post-filter: drop chunks with similarity < 0.70
     BE->>OAI: chat.complete(SYSTEM_PROMPT + history + chunks + query) — gpt-4o-mini
-    OAI-->>BE: answer text (Architect's Triad format)
+    OAI-->>BE: Markdown answer (Triad H2 sections inside one body)
     BE-->>FE: ② updateComponents (A2UI v0.9)
     BE->>DB: store_messages (background task — fire and forget)
-    FE-->>User: Triad answer (Blueprint · Ripple · Boundary) + source cards
+    FE-->>User: rendered answer + source cards
 ```
 
 ### Ingestion Flow
@@ -294,8 +271,9 @@ The full pipeline runs inside `knowledge_qa_agent.py`:
    ├─ embed_query(query) → OpenAI text-embedding-ada-002 → vector[1536]
    └─ _fetch_history(session_id) → SELECT last 10 messages ORDER BY created_at ASC
    ↓
-4. match_document_chunks(embedding=vector, match_count=5)
-   → Supabase pgvector RPC (cosine similarity via <#> operator)
+4. match_document_chunks(query_embedding, match_count=5,
+                          filter_category, filter_date_from, filter_date_to)
+   → Supabase pgvector RPC (cosine distance via <=> operator); returns top-K chunks
    ↓
 5. Filter: discard chunks where similarity < MIN_SIMILARITY (0.70)
    → Prevents low-quality context from polluting the LLM prompt
@@ -303,20 +281,21 @@ The full pipeline runs inside `knowledge_qa_agent.py`:
 6. Build prompt:
    SYSTEM_PROMPT (Architect's Triad instructions)
    + "Previous conversation:\n{history_block}"
-   + "Context:\n{chunk_content × N}"
+   + "Sources:\n[1] {source_file} — {section}\n{chunk_content}\n[2] ..."
    + "Question: {query}"
    ↓
-7. openai.chat.completions.create(model="gpt-4o-mini", stream=True)
+7. openai.chat.completions.create(model="gpt-4o-mini", max_tokens=1536)
+   → returns one Markdown blob with three H2 sections enforced by SYSTEM_PROMPT
    ↓
-8. Buffer full response → build A2UI components:
-   TextComponent(h2) "The Blueprint"    + MarkdownComponent(blueprint_text)
-   TextComponent(h2) "The Systemic Ripple" + MarkdownComponent(ripple_text)
-   TextComponent(h2) "The Boundary Condition" + MarkdownComponent(boundary_text)
-   SourceListComponent(sources[])
+8. Build A2UI updateComponents payload (4 components):
+   - answer-label    Text       "Answer" (h2)
+   - answer-body     Markdown   full Triad body in one blob (## Blueprint / ## Ripple / ## Boundary)
+   - meta-info       Text       caption with model + token usage (omitted if usage unavailable)
+   - sources-list    SourceList top-K source cards
    ↓
 9. Stream updateComponents(surface_id, components[])
    ↓
-10. BackgroundTasks.add_task(store_messages, session_id, query, a2ui_payload)
+10. asyncio.create_task(store_messages, session_id, query, a2ui_payload)
     → Fire-and-forget INSERT into messages table; does not block the SSE response
 ```
 
@@ -335,7 +314,7 @@ The full pipeline runs inside `ingest_agent.py`, streaming SSE progress at each 
    → SSE: { step: "parsing", status: "done" }
    ↓
 3. Chunk text:
-   RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+   Recursive character splitter (chunk_size=1500, chunk_overlap=150 chars)
    → Preserves sentence boundaries; overlap maintains context across chunks
    → SSE: { step: "chunking", status: "done" }
    ↓
@@ -346,7 +325,7 @@ The full pipeline runs inside `ingest_agent.py`, streaming SSE progress at each 
    ↓
 5. Dedup + store:
    DELETE FROM document_chunks WHERE source_file = '{filename}'  ← prevents duplicate entries on re-upload
-   INSERT INTO document_chunks (content, embedding, metadata, source_file)
+   INSERT INTO document_chunks (batch_id, source_file, category, chunk_index, content, embedding, metadata)
    → SSE: { step: "storing", status: "done" }
 ```
 
@@ -374,31 +353,31 @@ Session switch:
 
 ### A2UI Message Generation
 
-Both messages are built by `app/a2ui/messages.py`:
+Both messages are built by `app/a2ui/messages.py`. Component props are **flat** on the component object — not nested under a `props` key.
 
 ```python
 # Message 1 — sent immediately before any LLM call
-createSurface(surface_id) → {
+{
   "version": "v0.9",
   "createSurface": { "surfaceId": surface_id, "catalogId": "stub" }
 }
 
-# Message 2 — sent after full LLM response is buffered
-updateComponents(surface_id, components) → {
+# Message 2 — sent after full LLM response is buffered (4 components)
+{
   "version": "v0.9",
   "updateComponents": {
     "surfaceId": surface_id,
     "components": [
-      { "type": "text", "id": "...", "props": { "text": "The Blueprint", "usageHint": "h2" } },
-      { "type": "markdown", "id": "...", "props": { "content": "..." } },
-      ...
-      { "type": "sourceList", "id": "...", "props": { "sources": [...] } }
+      { "id": "answer-label", "component": "Text",       "text": "Answer", "usageHint": "h2" },
+      { "id": "answer-body",  "component": "Markdown",   "markdown": "## The Blueprint\n..." },
+      { "id": "meta-info",    "component": "Text",       "text": "Model: gpt-4o-mini · 847 tokens", "usageHint": "caption" },
+      { "id": "sources-list", "component": "SourceList", "sources": [ ... ] }
     ]
   }
 }
 ```
 
-**Key:** The full `updateComponents` JSON is stored as `a2ui_payload JSONB` in `messages` for protocol-exact hydration on session reload.
+The full `updateComponents` JSON is stored as `a2ui_payload JSONB` in `messages` for protocol-exact hydration on session reload. Full schema: [Contracts.md §2](Contracts.md).
 
 ### Project Layout
 
@@ -417,7 +396,7 @@ backend/
 │       ├── sessions.py          GET /current, POST /, DELETE /{id}, POST /{id}/activate
 │       └── ingest.py            POST /api/agents/ingest (multipart, SSE progress)
 └── agents/
-    ├── knowledge_qa_agent.py    Embed → vector_search → history → prompt → gpt-4o-mini → A2UI components
+    ├── knowledge_qa_agent.py    Embed (parallel with history fetch) → match_document_chunks → similarity filter → prompt → gpt-4o-mini → A2UI components
     └── ingest_agent.py          Parse → chunk → embed → dedup → store (SSE progress per step)
 ```
 
@@ -432,9 +411,10 @@ All data stored in Supabase (hosted PostgreSQL + pgvector extension).
 Stores embedded document content for vector search. **Canonical schema:** [Contracts.md §11](Contracts.md).
 
 **Key design decisions:**
-- `metadata JSONB` carries `{ source, date, category, section, url }` — avoids schema migrations when metadata fields change
+- Top-level scalar columns (`source_file`, `category`, `upload_date`, `chunk_index`) over JSONB — direct SQL filtering by category/date in the `match_document_chunks` RPC
+- `metadata JSONB` reserved but not currently populated by ingest — kept for future per-chunk extensible metadata without migrations
 - `source_file` is the dedup key: `DELETE WHERE source_file = X` runs before every re-upload
-- `ivfflat` index on `embedding vector_cosine_ops` for approximate nearest-neighbour search; `<#>` operator (negative inner product ≈ cosine) not `<=>`
+- `ivfflat` index on `embedding vector_cosine_ops` for approximate nearest-neighbour search; RPC uses `<=>` (cosine distance) and returns `1 - distance` as a similarity score in `[0, 1]`
 
 ### sessions + messages
 
@@ -484,13 +464,7 @@ All Knowledge-QA answers are structured into three mandatory sections via `SYSTE
 | **The Systemic Ripple** | How this concept propagates through surrounding architecture |
 | **The Boundary Condition** | Hard limits, failure modes, trade-off decisions |
 
-**A2UI component mapping:**
-```
-TextComponent(h2)  "The Blueprint"         + MarkdownComponent(blueprint_text)
-TextComponent(h2)  "The Systemic Ripple"   + MarkdownComponent(ripple_text)
-TextComponent(h2)  "The Boundary Condition"+ MarkdownComponent(boundary_text)
-SourceListComponent(sources[])
-```
+**A2UI component mapping:** All three sections render inside a **single `Markdown` component** — the LLM emits one Markdown blob with `## The Blueprint`, `## The Systemic Ripple`, `## The Boundary Condition` H2 headings, enforced by `SYSTEM_PROMPT`. The full payload is the 4-component shape from §3 (`answer-label` + `answer-body` Markdown + `meta-info` + `sources-list`).
 
 ---
 
@@ -577,9 +551,10 @@ Grafana (port 3001)
 **Query endpoint:** `POST /api/agents/knowledge-qa`
 
 Query params:
-- `query` (string, required)
-- `session_id` (UUID, optional — omit to start stateless)
-- `surface_id` (UUID, required — generated by FE per turn as `qa-turn-<uuid>`)
+- `query` (string, required) — empty/whitespace returns 400
+- `surface_id` (string, FE always sends — `qa-turn-<uuid>`) — backend falls back to `qa-result` if missing
+- `session_id` (UUID, optional) — omit for stateless query
+- `category`, `dateFrom`, `dateTo` — accepted by BE but unused by FE; see [Roadmap.md](Roadmap.md) Tech Debt
 
 **Output (Streaming JSONL):**
 ```
@@ -629,7 +604,7 @@ New apps: create `src/apps/<name>/`, register in `AppRegistry.ts`. No shell chan
 ### Catalog Extensibility
 
 ```
-src/a2ui/catalog/components/
+src/a2ui/catalog/components/        (registered A2UI types)
 ├─ TextComponent       ✅
 ├─ CardComponent       ✅
 ├─ ButtonComponent     ✅
@@ -637,9 +612,11 @@ src/a2ui/catalog/components/
 ├─ SourceListComponent ✅ compact citation strip; registers sources via sourceRegistry
 ├─ MetadataCard        ✅ document/section/date/category
 ├─ MarkdownComponent   ✅ react-markdown + GFM; [N] patterns → clickable citation badges
-├─ ConfidenceBadge     ✅ UI helper — Strong/Good/Relevant/Partial tiers
 ├─ ImageComponent      🔲 Backlog
 └─ FormComponent       🔲 Backlog
+
+Supporting React UI (not A2UI types — used inside other catalog components):
+└─ ConfidenceBadge        Strong/Good/Relevant/Partial tier badge for source cards
 ```
 
 New components: add to catalog + register in `ComponentHost`. No renderer changes.

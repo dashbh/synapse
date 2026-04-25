@@ -35,3 +35,4 @@ Items grouped by domain. No priority order implied.
 | Item | Description |
 |------|-------------|
 | SSR fix — knowledge-qa page | `page.tsx` is a Client Component (`'use client'`) due to `dynamic({ ssr: false })` on `KnowledgeQAApp`. Fix: keep `page.tsx` as a Server Component, move `dynamic({ ssr: false })` into a `KnowledgeQAAppClient` wrapper; apply `suppressHydrationWarning` or a `mounted` guard on `usePreferences` localStorage reads and `useSession` async init. |
+| Drop unused query params | `/api/agents/knowledge-qa` accepts `category`, `dateFrom`, `dateTo` and the RPC supports `filter_category`/`filter_date_from`/`filter_date_to`, but the FE never sends them. Either wire FE filter UI or remove from BE + RPC. |

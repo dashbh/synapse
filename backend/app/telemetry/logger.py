@@ -233,7 +233,7 @@ def get_rag_step_histogram():
     """
     Lazily create and return the RAG step duration histogram.
 
-    Labels:  step = embed_query | hybrid_retrieval | llm_completion
+    Labels:  step = embed_query | retrieval | llm_completion
     Unit:    seconds
     Purpose: per-step latency visible in Prometheus + Grafana Exemplars
     """

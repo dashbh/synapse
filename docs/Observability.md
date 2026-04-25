@@ -161,7 +161,7 @@ Traces show the full pipeline waterfall for a single query: how long each step t
 POST /api/agents/knowledge-qa          ~1.5s  ← HTTP root span
   └─ stream_response                   ~1.4s
        ├─ embed_query                  ~120ms   gen_ai.request.model=text-embedding-ada-002
-       ├─ retrieval             ~80ms    db.statement=match_document_chunks
+       ├─ retrieval                    ~80ms    db.statement=match_document_chunks
        │                                        synapse.retrieval.chunks_returned=3
        └─ llm_completion              ~900ms   gen_ai.usage.total_tokens=847
 ```

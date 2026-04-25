@@ -50,7 +50,7 @@
 | Endpoint | Description | Contract |
 |----------|-------------|----------|
 | `POST /api/agents/knowledge-qa` | RAG query → SSE stream (`createSurface` + `updateComponents`) | [Contracts.md §1–9](../Contracts.md) |
-| `POST /api/agents/ingest` | Multipart file upload → SSE progress stream | [Contracts.md §11](../Contracts.md) |
+| `POST /api/agents/ingest` | Multipart file upload → SSE progress stream | [Contracts.md §10](../Contracts.md) |
 
 ---
 
@@ -62,7 +62,7 @@ messages        (id UUID, session_id UUID, role TEXT, content TEXT, a2ui_payload
 document_chunks (id UUID, content TEXT, embedding vector(1536), metadata JSONB, source_file TEXT)
 ```
 
-Full schema: [Contracts.md §12](../Contracts.md).
+Full schema: [Contracts.md §11](../Contracts.md).
 
 ---
 

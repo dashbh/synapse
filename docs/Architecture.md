@@ -429,71 +429,16 @@ All data stored in Supabase (hosted PostgreSQL + pgvector extension).
 
 ### document_chunks
 
-Stores embedded document content for vector search.
+Stores embedded document content for vector search. **Canonical schema:** [Contracts.md §11](Contracts.md).
 
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-
-CREATE TABLE document_chunks (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  content     TEXT NOT NULL,
-  embedding   VECTOR(1536) NOT NULL,
-  metadata    JSONB NOT NULL DEFAULT '{}',  -- { source, date, category, section, url }
-  source_file TEXT NOT NULL,                -- original filename; used for dedup on re-upload
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_chunks_embedding ON document_chunks
-  USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
-
--- RPC used by knowledge_qa_agent.py
-CREATE OR REPLACE FUNCTION match_document_chunks(
-  query_embedding VECTOR(1536),
-  match_count     INT DEFAULT 5,
-  filter          JSONB DEFAULT '{}'
-)
-RETURNS TABLE (
-  id         UUID,
-  content    TEXT,
-  metadata   JSONB,
-  similarity FLOAT
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-  RETURN QUERY
-  SELECT dc.id, dc.content, dc.metadata,
-         1 - (dc.embedding <#> query_embedding) AS similarity
-  FROM document_chunks dc
-  ORDER BY dc.embedding <#> query_embedding
-  LIMIT match_count;
-END;
-$$;
-```
+**Key design decisions:**
+- `metadata JSONB` carries `{ source, date, category, section, url }` — avoids schema migrations when metadata fields change
+- `source_file` is the dedup key: `DELETE WHERE source_file = X` runs before every re-upload
+- `ivfflat` index on `embedding vector_cosine_ops` for approximate nearest-neighbour search; `<#>` operator (negative inner product ≈ cosine) not `<=>`
 
 ### sessions + messages
 
-Stores conversation history and A2UI payloads for session persistence and hydration.
-
-```sql
-CREATE TABLE sessions (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        TEXT NOT NULL DEFAULT 'New Session',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE messages (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id   UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  role         TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-  content      TEXT,         -- raw query text (user turns only)
-  a2ui_payload JSONB,        -- full updateComponents payload (assistant turns only)
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_messages_session ON messages(session_id, created_at);
-```
+Stores conversation history and A2UI payloads for session persistence and hydration. **Canonical schema:** [Contracts.md §11](Contracts.md).
 
 **Key design decisions:**
 - `a2ui_payload` stores the full `updateComponents` JSON — hydration replays the protocol message exactly, preserving design tokens and component structure without re-generating

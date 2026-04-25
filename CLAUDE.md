@@ -50,7 +50,7 @@ Choose **one** layer/role below:
 
 | Item | Link |
 |---|---|
-| **Entry Point** | `backend/README.md` (not yet created) |
+| **Entry Point** | [backend/README.md](backend/README.md) |
 | **Your Code** | `backend/app/` and `backend/agents/` |
 | **Contract Spec** | [docs/Contracts.md](docs/Contracts.md) |
 | **Message Format** | [docs/A2UI_Specification.md](docs/A2UI_Specification.md) |
@@ -68,7 +68,7 @@ Choose **one** layer/role below:
 
 | Item | Link |
 |---|---|
-| **Entry Point** | `infra/README.md` (not yet created) |
+| **Entry Point** | [infra/README.md](infra/README.md) |
 | **Your Code** | `infra/terraform/`, `infra/docker-compose.yml` |
 | **System Overview** | [docs/Architecture.md](docs/Architecture.md) |
 | **Standards** | [docs/Governance.md](docs/Governance.md) |
@@ -81,7 +81,7 @@ Choose **one** layer/role below:
 
 **Where to track progress:**
 - **Frontend:** Session notes in [frontend/README.md](frontend/README.md) top section (updates while working)
-- **Backend:** Add to `backend/README.md` when layer starts
+- **Backend:** Session notes in [backend/README.md](backend/README.md) § Session Notes
 - **Infra:** Add to `infra/README.md` when layer starts
 
 **What to capture:**

@@ -537,7 +537,7 @@ Grafana (port 3001)
 
 ### Release Pipeline
 
-Production releases are fully automated via GitHub Actions. Pushing a semver tag (`v*.*.*`) triggers `.github/workflows/production-release.yml`, which builds and publishes both container images in parallel, then creates a GitHub Release.
+Production releases are fully automated via GitHub Actions. Pushing a semver tag (`v*.*.*`) triggers `.github/workflows/production-release.yml`, which builds and publishes both container images in parallel, then creates a GitHub Release. For the step-by-step procedure (RC rehearsal, smoke tests, rollback), see [Release.md](Release.md).
 
 ```
 git tag v1.0.0 && git push --tags

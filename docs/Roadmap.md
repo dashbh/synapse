@@ -7,6 +7,8 @@
 
 ## MVP Complete
 
+**Released as `v1.0.0`** — the MVP scope below is being cut as the first stable release. See [Release.md](Release.md) for the cut procedure (RC rehearsal → final tag → post-release verification). The release publishes both `synapse-backend` and `synapse-frontend` container images to GHCR with SLSA build-provenance attestations.
+
 The MVP ships the full Knowledge-QA app on the Synapse platform shell:
 
 - **Platform Shell** — AppRegistry, A2UI v0.9, SSE streaming, design tokens, 7 catalog components

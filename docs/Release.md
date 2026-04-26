@@ -1,6 +1,6 @@
 # Release Process
 
-**Workflow:** [.github/workflows/production-release.yml](.github/workflows/production-release.yml)  
+**Workflow:** [.github/workflows/production-release.yml](../.github/workflows/production-release.yml)  
 **Trigger:** any tag matching `v*.*.*` pushed to the repository  
 **Strategy:** cut a **release-candidate (RC)** tag first → validate the artifacts end-to-end → cut the final tag only when the RC is green
 
@@ -16,38 +16,10 @@ One-time setup per machine:
 |---|---|---|
 | `gh` CLI, authenticated | run / watch workflows, verify attestations | `brew install gh && gh auth login` |
 | Docker Desktop, running | pull and run the published images locally | https://docker.com/products/docker-desktop |
-| `actionlint` (optional) | catch workflow YAML errors before tagging | `brew install actionlint` |
 
 The `GITHUB_TOKEN` used by the workflow is provisioned automatically — no secrets to manage.
 
----
-
-## Phase 0 — Land the work on the ship branch
-
-This is mandatory before tagging. The tagged commit must exist on the branch that represents shippable code (`main` for most projects; substitute your release branch if different).
-
-```bash
-# On your feature branch
-git push origin <feature-branch>
-gh pr create --base main --fill        # or open via the GitHub UI
-
-# Once reviewed + CI green
-gh pr merge --squash                   # or merge via the UI
-
-# Switch to main and pull the merged state
-git checkout main
-git pull origin main
-git status                             # must be clean
-```
-
-Verify the workflow file is present at HEAD:
-
-```bash
-ls .github/workflows/production-release.yml
-actionlint .github/workflows/production-release.yml
-```
-
-If `actionlint` returns no output, the workflow is syntactically valid.
+**Before starting:** the work being released must already be merged into your ship branch (`main`, or your release branch). Tags are cut from that branch, not from feature branches.
 
 ---
 
@@ -216,8 +188,8 @@ docker inspect ghcr.io/<owner>/synapse-backend:v1.0.0 --format '{{.Id}}'
 Repeat for the frontend image.
 
 Optional follow-ups:
-- Update [docs/Roadmap.md](docs/Roadmap.md) MVP Complete or backlog if the release closes major items
-- Record a one-line entry in [docs/Decision_Log.md](docs/Decision_Log.md) if the release embodies a notable architectural decision
+- Update [Roadmap.md](Roadmap.md) MVP Complete or backlog if the release closes major items
+- Record a one-line entry in [Decision_Log.md](Decision_Log.md) if the release embodies a notable architectural decision
 - Announce the release (Slack / email / changelog feed)
 
 ---
@@ -238,7 +210,6 @@ Cutting a patch release is the standard rollback path. Yanking should be reserve
 
 | Step | Command |
 |---|---|
-| Lint workflow | `actionlint .github/workflows/production-release.yml` |
 | Cut RC tag | `git tag v1.0.0-rcN && git push origin v1.0.0-rcN` |
 | Watch pipeline | `gh run watch` |
 | Pull RC images | `docker pull ghcr.io/<owner>/synapse-{backend,frontend}:v1.0.0-rcN` |
@@ -251,4 +222,4 @@ Cutting a patch release is the standard rollback path. Yanking should be reserve
 
 ---
 
-*Architecture details: [docs/Architecture.md §6 Release Pipeline](docs/Architecture.md). Workflow source: [.github/workflows/production-release.yml](.github/workflows/production-release.yml).*
+*Architecture details: [Architecture.md §6 Release Pipeline](Architecture.md). Workflow source: [.github/workflows/production-release.yml](../.github/workflows/production-release.yml).*

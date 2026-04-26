@@ -646,15 +646,17 @@ export const designTokens = {
 - [x] **Infra:** Docker Compose (`dev` + `prod` profiles), multi-stage Dockerfiles, LGTM observability sidecar
 - [x] **Observability:** OTel distributed tracing, structlog JSON, W3C trace propagation, FE structured logging, Grafana dashboards, Playwright E2E tests
 
-For backlog and planned features, see [Roadmap.md](Roadmap.md).
+For backlog and planned features, see [Roadmap.md](Roadmap.md). For the rationale and consequences behind significant decisions, see [Decision_Log.md](Decision_Log.md).
 
-**Architecture decisions (locked):**
+**Foundational stack choices (locked):**
 - LLM: OpenAI `gpt-4o-mini`
 - Embeddings: OpenAI `text-embedding-ada-002`
 - Vector store: Supabase pgvector (`match_document_chunks` RPC)
 - Orchestration: Direct SDK calls (no LangChain)
 - Transport: SSE over plain fetch (no WebSocket)
 - Session storage: Supabase PostgreSQL JSONB payloads
+
+New foundational decisions or reversals to the above are recorded as ADRs in [Decision_Log.md](Decision_Log.md).
 
 ---
 

@@ -100,6 +100,7 @@ Choose **one** layer/role below:
 | **Platform vision & NFRs** | [docs/Platform_Requirements.md](docs/Platform_Requirements.md) |
 | **Knowledge-QA app spec** | [docs/apps/knowledge-qa.md](docs/apps/knowledge-qa.md) |
 | **Roadmap & backlog** | [docs/Roadmap.md](docs/Roadmap.md) |
+| **Architecture decisions (ADRs)** | [docs/Decision_Log.md](docs/Decision_Log.md) |
 | **System architecture** | [docs/Architecture.md](docs/Architecture.md) |
 | **Rules & constraints** | [docs/Governance.md](docs/Governance.md) |
 | **Message contracts** | [docs/Contracts.md](docs/Contracts.md) |

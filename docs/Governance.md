@@ -158,7 +158,8 @@ src/apps/ ← can import from both above
 
 - ✅ Each file has single responsibility (documented at top)
 - ✅ Architecture rules here (this file)
-- ✅ Tech stack decisions in Architecture.md §3
+- ✅ Foundational stack choices listed in Architecture.md §3 + §10
+- ✅ Significant or reversible decisions recorded as ADRs in Decision_Log.md (append-only)
 - ✅ How-to guides in FE_Patterns.md
 - ✅ Reference (components, tokens) in FE_Reference.md
 - ✅ Protocol details in A2UI_Specification.md
@@ -280,3 +281,5 @@ src/apps/ ← can import from both above
 - [FE_Patterns.md](FE_Patterns.md) — How-to guides
 - [Architecture.md](Architecture.md) — System design + backend layout
 - [Contracts.md](Contracts.md) — SSE protocol contract
+- [Decision_Log.md](Decision_Log.md) — Why each significant decision was made
+- [Roadmap.md](Roadmap.md) — Backlog tracks + tech debt

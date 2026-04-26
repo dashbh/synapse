@@ -21,7 +21,7 @@ OBS          := -f infra/docker-compose.observability.yml
 DEV_PROFILE  := --profile dev
 PROD_PROFILE := --profile prod
 
-.PHONY: dev dev-d prod prod-d obs obs-down down logs logs-be logs-fe logs-obs ps build build-be build-fe clean shell-be shell-fe grafana-export test-e2e test-e2e-ui load-test-query load-test-sessions load-test-ingest help
+.PHONY: dev dev-d prod prod-d prod-ghcr prod-ghcr-d obs obs-down down logs logs-be logs-fe logs-obs ps build build-be build-fe clean shell-be shell-fe grafana-export test-e2e test-e2e-ui load-test-query load-test-sessions load-test-ingest help
 
 # ── Start ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,12 @@ prod: ## Start frontend + backend in prod mode
 
 prod-d: ## Start frontend + backend in prod mode (detached)
 	$(COMPOSE) $(BASE) $(PROD_PROFILE) up -d
+
+prod-ghcr: ## Start prod stack using GHCR images (pulls pre-built images)
+	$(COMPOSE) $(BASE) --profile prod-ghcr up
+
+prod-ghcr-d: ## Start prod stack using GHCR images (detached)
+	$(COMPOSE) $(BASE) --profile prod-ghcr up -d
 
 
 # ── Stop ─────────────────────────────────────────────────────────────────────

@@ -535,10 +535,58 @@ Grafana (port 3001)
 
 **Grafana quick-start:** Open http://localhost:3001 → Explore → select Tempo/Loki/Prometheus datasource. See [Observability.md](Observability.md) for full guide.
 
-### Deployment (Future)
+### Release Pipeline
 
-- **FE:** Vercel (Next.js native)
-- **BE:** Railway or Fly.io (Python FastAPI)
+Production releases are fully automated via GitHub Actions. Pushing a semver tag (`v*.*.*`) triggers `.github/workflows/production-release.yml`, which builds and publishes both container images in parallel, then creates a GitHub Release.
+
+```
+git tag v1.0.0 && git push --tags
+   │
+   ▼
+GitHub Actions: production-release.yml
+   │
+   ├─ build-and-push  (matrix, parallel)
+   │  ├─ synapse-backend   ← /backend/Dockerfile  · linux/amd64 + linux/arm64
+   │  └─ synapse-frontend  ← /frontend/Dockerfile · linux/amd64 + linux/arm64
+   │  │
+   │  Per image:
+   │  ├─ docker buildx → push to ghcr.io/<owner>/<image> (tags: <version> + latest)
+   │  └─ actions/attest-build-provenance → SLSA attestation pushed as OCI referrer
+   │
+   └─ release  (needs build-and-push — fan-in)
+      └─ softprops/action-gh-release → auto-changelog from PRs + docker pull commands
+```
+
+**Outputs per release:**
+
+| Artifact | Location |
+|---|---|
+| `synapse-backend:<version>` and `:latest` | `ghcr.io/<owner>/synapse-backend` |
+| `synapse-frontend:<version>` and `:latest` | `ghcr.io/<owner>/synapse-frontend` |
+| SLSA build-provenance attestation per image | OCI referrer alongside each image manifest |
+| GitHub Release | Auto-generated changelog from merged PRs since the previous tag, plus pull + verify commands |
+
+**Verifying provenance:**
+
+```bash
+gh attestation verify oci://ghcr.io/<owner>/synapse-backend:<version> --owner <owner>
+gh attestation verify oci://ghcr.io/<owner>/synapse-frontend:<version> --owner <owner>
+```
+
+**Pipeline design choices:**
+- **Multi-arch (`amd64` + `arm64`)** — covers standard cloud VMs and Apple Silicon dev/CI hosts in a single push
+- **GHCR over Docker Hub** — same identity provider as the source repo; no external secret to rotate
+- **`provenance: false` on `docker/build-push-action`** — buildx's in-manifest provenance and `actions/attest-build-provenance` both produce attestations; combining them on multi-platform pushes corrupts the manifest list. The signed SLSA attestation is the single authoritative source.
+- **Matrix over sequential** — frontend doesn't block on backend; cache scoped per image (`type=gha,scope=<image>`) prevents cache eviction between the two
+- **`cancel-in-progress: false`** — releases must not be interrupted mid-publish; concurrent tags queue rather than cancel
+- **Fan-in release job** — `release` requires both matrix entries to succeed; partial releases (one image published, the other failed) cannot create a GitHub Release
+
+### Hosted Deployment Targets (Planned)
+
+The release pipeline above produces the container artifacts. Where they ultimately run is still being decided:
+
+- **FE:** Vercel (Next.js native) — or pull `synapse-frontend:latest` onto any container host
+- **BE:** Railway or Fly.io (Python FastAPI) — or pull `synapse-backend:latest` onto any container host
 - **DB:** Supabase managed (already hosted)
 - **IaC:** Terraform (`infra/terraform/`)
 

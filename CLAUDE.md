@@ -101,6 +101,7 @@ Choose **one** layer/role below:
 | **Knowledge-QA app spec** | [docs/apps/knowledge-qa.md](docs/apps/knowledge-qa.md) |
 | **Roadmap & backlog** | [docs/Roadmap.md](docs/Roadmap.md) |
 | **Architecture decisions (ADRs)** | [docs/Decision_Log.md](docs/Decision_Log.md) |
+| **Release procedure** | [RELEASE.md](RELEASE.md) |
 | **System architecture** | [docs/Architecture.md](docs/Architecture.md) |
 | **Rules & constraints** | [docs/Governance.md](docs/Governance.md) |
 | **Message contracts** | [docs/Contracts.md](docs/Contracts.md) |

@@ -13,6 +13,7 @@ The MVP ships the full Knowledge-QA app on the Synapse platform shell:
 - **Knowledge-QA** — RAG pipeline, session persistence, Architect's Triad, rich citations, document ingestion
 - **Observability** — LGTM stack (OTel, Loki, Grafana, Tempo, Prometheus) with FE structured logging
 - **Testing** — Playwright E2E suite (11/12 passing)
+- **Release pipeline** — automated multi-arch (`amd64` + `arm64`) container builds to GHCR with SLSA build-provenance attestations on every `v*.*.*` tag (see [Architecture.md §6](Architecture.md))
 
 ---
 

@@ -89,3 +89,4 @@ Supporting UI (not A2UI types): **ConfidenceBadge** — color-coded tiers (Stron
 | Knowledge-QA app spec | [apps/knowledge-qa.md](apps/knowledge-qa.md) |
 | Roadmap & backlog | [Roadmap.md](Roadmap.md) |
 | Architecture Decision Records (ADRs) | [Decision_Log.md](Decision_Log.md) |
+| Release procedure | [Release.md](Release.md) |

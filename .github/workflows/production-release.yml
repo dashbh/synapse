@@ -1,0 +1,137 @@
+name: Production Release
+
+# Triggered only by semver tag pushes (e.g. v1.0.0). Each push:
+#   1. Builds multi-arch images for backend + frontend in parallel
+#   2. Pushes them to GHCR with the version tag and `latest`
+#   3. Generates signed build-provenance attestations
+#   4. Creates a GitHub Release with auto-generated notes + pull commands
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write       # create the GitHub Release
+  packages: write       # push images to GHCR
+  id-token: write       # OIDC token for keyless attestation signing
+  attestations: write   # write the attestation to the repo
+
+# A release is not interruptible. Queue subsequent tags rather than cancelling.
+concurrency:
+  group: production-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    name: Build & Push (${{ matrix.image.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: synapse-backend
+            context: ./backend
+          - name: synapse-frontend
+            context: ./frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # GHCR requires lowercase owner; github.repository_owner preserves case.
+      - name: Lowercase repository owner
+        id: owner
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.owner.outputs.value }}/${{ matrix.image.name }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - name: Build and push (multi-arch)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Disable buildx's in-manifest provenance so the signed SLSA
+          # attestation produced by actions/attest-build-provenance is the
+          # single authoritative source. Mixing both can break manifest lists.
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ steps.owner.outputs.value }}/${{ matrix.image.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  release:
+    name: Create GitHub Release
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lowercase repository owner
+        id: owner
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Synapse ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Container Images
+
+            Multi-arch images (`linux/amd64`, `linux/arm64`) published to GHCR with signed SLSA build-provenance attestations.
+
+            **Pull this release:**
+
+            ```bash
+            docker pull ghcr.io/${{ steps.owner.outputs.value }}/synapse-backend:${{ github.ref_name }}
+            docker pull ghcr.io/${{ steps.owner.outputs.value }}/synapse-frontend:${{ github.ref_name }}
+            ```
+
+            **Or use the `latest` tag:**
+
+            ```bash
+            docker pull ghcr.io/${{ steps.owner.outputs.value }}/synapse-backend:latest
+            docker pull ghcr.io/${{ steps.owner.outputs.value }}/synapse-frontend:latest
+            ```
+
+            **Verify provenance with the GitHub CLI:**
+
+            ```bash
+            gh attestation verify oci://ghcr.io/${{ steps.owner.outputs.value }}/synapse-backend:${{ github.ref_name }} \
+              --owner ${{ steps.owner.outputs.value }}
+
+            gh attestation verify oci://ghcr.io/${{ steps.owner.outputs.value }}/synapse-frontend:${{ github.ref_name }} \
+              --owner ${{ steps.owner.outputs.value }}
+            ```

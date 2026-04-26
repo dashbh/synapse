@@ -7,12 +7,15 @@
 
 ## MVP Complete
 
+**Released as `v1.0.0`** — the MVP scope below is being cut as the first stable release. See [Release.md](Release.md) for the cut procedure (RC rehearsal → final tag → post-release verification). The release publishes both `synapse-backend` and `synapse-frontend` container images to GHCR with SLSA build-provenance attestations.
+
 The MVP ships the full Knowledge-QA app on the Synapse platform shell:
 
 - **Platform Shell** — AppRegistry, A2UI v0.9, SSE streaming, design tokens, 7 catalog components
 - **Knowledge-QA** — RAG pipeline, session persistence, Architect's Triad, rich citations, document ingestion
 - **Observability** — LGTM stack (OTel, Loki, Grafana, Tempo, Prometheus) with FE structured logging
 - **Testing** — Playwright E2E suite (11/12 passing)
+- **Release pipeline** — automated multi-arch (`amd64` + `arm64`) container builds to GHCR with SLSA build-provenance attestations on every `v*.*.*` tag (see [Architecture.md §6](Architecture.md))
 
 ---
 

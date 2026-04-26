@@ -85,3 +85,28 @@ services:
       - ../.env
     environment:
       - PORT=8000
+
+  # ─────────────── PROD-GHCR: Frontend (pulls from GHCR) ──────────────────────
+  frontend-prod-ghcr:
+    profiles: [prod-ghcr]
+    image: ghcr.io/dashbh/synapse-frontend:latest
+    ports:
+      - "3000:3000"
+    env_file:
+      - ../.env
+    environment:
+      - NODE_ENV=production
+      - BACKEND_URL=http://backend-prod-ghcr:8000
+    depends_on:
+      - backend-prod-ghcr
+
+  # ─────────────── PROD-GHCR: Backend (pulls from GHCR) ───────────────────────
+  backend-prod-ghcr:
+    profiles: [prod-ghcr]
+    image: ghcr.io/dashbh/synapse-backend:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      - PORT=8000

@@ -14,9 +14,13 @@ CMD ["npm", "run", "dev"]
 
 # ── Stage 3: prod-builder ─────────────────────────────────────────────────────
 FROM base AS prod-builder
-ENV NODE_ENV=production
-RUN npm ci
+# Install both deps and devDeps — build tools (tailwindcss, @tailwindcss/postcss,
+# typescript) live in devDependencies but are required during `next build`.
+# `--include=dev` is needed because NODE_ENV=production (set below) would
+# otherwise cause npm to silently skip devDependencies.
+RUN npm ci --include=dev
 COPY . .
+ENV NODE_ENV=production
 # prebuild runs generateTokens.mjs → next build → produces .next/standalone
 RUN npm run build
 

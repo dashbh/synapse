@@ -1,23 +1,16 @@
 name: Production Release
 
-# Triggered only by semver tag pushes (e.g. v1.0.0). Each push:
-#   1. Builds multi-arch images for backend + frontend in parallel
-#   2. Pushes them to GHCR with the version tag and `latest`
-#   3. Generates signed build-provenance attestations
-#   4. Creates a GitHub Release with auto-generated notes + pull commands
-
 on:
   push:
     tags:
       - 'v*.*.*'
 
 permissions:
-  contents: write       # create the GitHub Release
-  packages: write       # push images to GHCR
-  id-token: write       # OIDC token for keyless attestation signing
-  attestations: write   # write the attestation to the repo
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
 
-# A release is not interruptible. Queue subsequent tags rather than cancelling.
 concurrency:
   group: production-release-${{ github.ref }}
   cancel-in-progress: false
@@ -42,11 +35,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # GHCR requires lowercase owner; github.repository_owner preserves case.
+      # GHCR requires lowercase owner; this avoids "Invalid Reference Format" errors.
       - name: Lowercase repository owner
         id: owner
         run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
+      # Essential for ARM64 (Apple Silicon) + AMD64 (Cloud) support
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -78,9 +72,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Disable buildx's in-manifest provenance so the signed SLSA
-          # attestation produced by actions/attest-build-provenance is the
-          # single authoritative source. Mixing both can break manifest lists.
+          # Fixes "unsupported media type" error for local Docker pulls
+          # by moving provenance to an external attestation instead of the manifest.
           provenance: false
           cache-from: type=gha,scope=${{ matrix.image.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
@@ -108,30 +101,23 @@ jobs:
           name: Synapse ${{ github.ref_name }}
           generate_release_notes: true
           body: |
-            ## Container Images
+            ## 🏗️ System Architecture
+            - **Backend:** FastAPI / Python 
+            - **Frontend:** React / TypeScript
+            - **Platforms:** `linux/amd64`, `linux/arm64` (Apple Silicon compatible)
 
-            Multi-arch images (`linux/amd64`, `linux/arm64`) published to GHCR with signed SLSA build-provenance attestations.
+            ## 📦 Container Images
 
-            **Pull this release:**
+            Pull the latest images for this release:
 
             ```bash
             docker pull ghcr.io/${{ steps.owner.outputs.value }}/synapse-backend:${{ github.ref_name }}
             docker pull ghcr.io/${{ steps.owner.outputs.value }}/synapse-frontend:${{ github.ref_name }}
             ```
 
-            **Or use the `latest` tag:**
+            **Note:** If you encounter manifest errors locally, ensure Docker Desktop has the **containerd image store** enabled in Settings.
 
+            **Verify build integrity:**
             ```bash
-            docker pull ghcr.io/${{ steps.owner.outputs.value }}/synapse-backend:latest
-            docker pull ghcr.io/${{ steps.owner.outputs.value }}/synapse-frontend:latest
-            ```
-
-            **Verify provenance with the GitHub CLI:**
-
-            ```bash
-            gh attestation verify oci://ghcr.io/${{ steps.owner.outputs.value }}/synapse-backend:${{ github.ref_name }} \
-              --owner ${{ steps.owner.outputs.value }}
-
-            gh attestation verify oci://ghcr.io/${{ steps.owner.outputs.value }}/synapse-frontend:${{ github.ref_name }} \
-              --owner ${{ steps.owner.outputs.value }}
+            gh attestation verify oci://ghcr.io/${{ steps.owner.outputs.value }}/synapse-backend:${{ github.ref_name }} --owner ${{ steps.owner.outputs.value }}
             ```
